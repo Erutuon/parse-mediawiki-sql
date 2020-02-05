@@ -1,0 +1,17 @@
+[package]
+name = "parse-mediawiki-sql"
+version = "0.1.0"
+authors = ["Erutuon <5840197+Erutuon@users.noreply.github.com>"]
+edition = "2018"
+
+[lib]
+name = "parse_mediawiki_sql"
+[dependencies]
+chrono = "0.4.10"
+nom = "5.0.1"
+memmap = "0.7.0"
+
+[[example]]
+name = "test"
+path = "examples/test.rs"
+# parse-mediawiki-sql = { version = "0.1.0", path = "." }
