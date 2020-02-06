@@ -136,8 +136,15 @@ where
 macro_rules! impl_wrapper {
     (#[$comment:meta] $wrapper:ident: $wrapped:ty) => {
         #[$comment]
-        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $wrapper($wrapped);
+
+        #[allow(unused)]
+        impl $wrapper {
+            pub fn into_inner(self) -> $wrapped {
+                self.0
+            }
+        }
 
         impl<'a> FromSQL<'a> for $wrapper {
             fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
@@ -150,11 +157,24 @@ macro_rules! impl_wrapper {
                 val.0
             }
         }
+
+        impl From<$wrapped> for $wrapper {
+            fn from(val: $wrapped) -> Self {
+                Self(val)
+            }
+        }
     };
     (#[$comment:meta] $wrapper:ident<$l:lifetime>: $wrapped:ty) => {
         #[$comment]
-        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $wrapper<$l>($wrapped);
+
+        #[allow(unused)]
+        impl<$l> $wrapper<$l> {
+            pub fn into_inner(self) -> $wrapped {
+                self.0
+            }
+        }
 
         impl<$l> FromSQL<$l> for $wrapper<$l> {
             fn from_sql(s: &$l str) -> IResult<&'a str, Self> {
@@ -338,7 +358,7 @@ field of the `user_groups` table.
 /// given as a string in `yyyymmddhhmmss` format. Provides the methods of
 /// [`NaiveDateTime`](../../chrono/naive/struct.NaiveDateTime.html) through
 /// `Deref`.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Timestamp(NaiveDateTime);
 
 impl<'input> FromSQL<'input> for Timestamp {
@@ -360,7 +380,7 @@ impl Deref for Timestamp {
 /// Represents the
 /// [`pr_expiry`](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table#pr_expiry)
 /// field of the `page_restrictions` table.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Expiry {
     Timestamp(Timestamp),
     Infinity,
@@ -378,7 +398,7 @@ impl<'input> FromSQL<'input> for Expiry {
 /// Represents the
 /// [`cl_type`](https://www.mediawiki.org/wiki/Manual:Categorylinks_table#cl_type)
 /// field of the `categorylinks` table.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum PageType<'a> {
     Page,
     Subcat,
@@ -407,7 +427,7 @@ impl<'a> FromSQL<'a> for PageType<'a> {
 /// Represents the
 /// [`pr_type`](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table#pr_type)
 /// field of the `page_restrictions` table, the action that is restricted.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum PageAction<'a> {
     Edit,
     Move,
@@ -438,7 +458,7 @@ impl<'a> FromSQL<'a> for PageAction<'a> {
 /// [`pr_level`](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table#pr_level)
 /// field of the `page_restrictions` table, the group that is allowed
 /// to perform the action.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ProtectionLevel<'a> {
     Autoconfirmed,
     ExtendedConfirmed,
@@ -609,7 +629,7 @@ fn test_page_restrictions() {
 /// Represents the
 /// [`page_content_model`](https://www.mediawiki.org/wiki/Manual:Page_table#page_content_model)
 /// field of the `page` table.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ContentModel<'a> {
     Wikitext,
     Scribunto,
@@ -646,7 +666,7 @@ impl<'a> FromSQL<'a> for ContentModel<'a> {
 /// Represents the
 /// [`img_media_type`](https://www.mediawiki.org/wiki/Manual:Image_table#img_media_type)
 /// field of the `image` table.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum MediaType<'a> {
     Unknown,
     Bitmap,
@@ -692,7 +712,7 @@ impl<'a> FromSQL<'a> for MediaType<'a> {
 /// Represents the
 /// [`img_major_mime`](https://www.mediawiki.org/wiki/Manual:Image_table#img_major_mime)
 /// field of the `image` table.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum MajorMime<'a> {
     Unknown,
     Application,

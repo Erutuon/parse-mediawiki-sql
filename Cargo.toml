@@ -10,8 +10,12 @@ name = "parse_mediawiki_sql"
 chrono = "0.4.10"
 nom = "5.0.1"
 memmap = "0.7.0"
+serde_json = "1.0.46"
 
 [[example]]
-name = "test"
-path = "examples/test.rs"
-# parse-mediawiki-sql = { version = "0.1.0", path = "." }
+name = "count_pages_by_content_model"
+path = "examples/count_pages_by_content_model.rs"
+
+[[example]]
+name = "redirects_by_namespace"
+path = "examples/redirects_by_namespace.rs"

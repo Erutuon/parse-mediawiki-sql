@@ -1,4 +1,6 @@
 *.bk
 expanded.rs
+*.json
 *.sql
 target
+*.txt
