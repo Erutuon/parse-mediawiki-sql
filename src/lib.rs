@@ -1,8 +1,9 @@
 use crate::types::FromSQL;
+use bstr::{ByteSlice, B};
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_while},
-    character::complete::multispace0,
+    bytes::streaming::{tag, take_while},
+    character::streaming::multispace0,
     combinator::{iterator, opt, recognize, ParserIterator},
     error::ErrorKind,
     sequence::{preceded, tuple},
@@ -15,16 +16,16 @@ pub mod types;
 /// Returns an iterator over the values represented in the SQL dump of
 /// a MediaWiki database.
 pub fn iterate_sql_insertions<'a, T>(
-    sql: &'a str,
+    sql: &'a [u8],
 ) -> ParserIterator<
-    &'a str,
-    (&str, ErrorKind),
-    impl Fn(&'a str) -> IResult<&'a str, T, (&str, ErrorKind)>,
+    &'a [u8],
+    (&'a [u8], ErrorKind),
+    impl Fn(&'a [u8]) -> IResult<&'a [u8], T, (&'a [u8], ErrorKind)>,
 >
 where
     T: FromSQL<'a> + 'a,
 {
-    let sql = &sql[sql.find("INSERT INTO").unwrap()..];
+    let sql = &sql[sql.find("INSERT INTO").expect("INSERT INTO statement")..];
     iterator(
         sql,
         preceded(
@@ -34,9 +35,9 @@ where
                     opt(tag(";")),
                     opt(multispace0),
                     tuple((
-                        tag("INSERT INTO `"),
-                        take_while(|b| 'a' <= b && b <= 'z' || b == '_'),
-                        tag("` VALUES "),
+                        tag(B("INSERT INTO `")),
+                        take_while(|b| b'a' <= b && b <= b'z' || b == b'_'),
+                        tag(B("` VALUES ")),
                     )),
                 ))),
                 tag(","),

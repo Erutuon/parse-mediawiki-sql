@@ -4,19 +4,20 @@ Defines types that represent fields in tables of the
 and the `FromSQL` trait to convert them from SQL syntax.
 */
 
+use bstr::B;
 use chrono::NaiveDateTime;
 use nom::{
     branch::alt,
-    bytes::complete::{escaped, tag},
-    character::complete::{char, digit1, none_of, one_of},
-    combinator::{cut, map, opt, recognize},
-    number::complete::recognize_float,
+    bytes::streaming::{escaped_transform, is_not, tag},
+    character::streaming::{char, digit1, one_of},
+    combinator::{map, opt, recognize},
+    number::streaming::recognize_float,
     sequence::{preceded, terminated, tuple},
     IResult,
 };
+use ordered_float::NotNan;
 use std::{
-    borrow::Cow,
-    collections::HashMap,
+    collections::BTreeMap,
     iter::FromIterator,
     ops::{Deref, Index},
 };
@@ -24,11 +25,11 @@ use std::{
 /// Trait containing a function that infallibly converts from an SQL string
 /// to a Rust type, which can borrow from the string or not.
 pub trait FromSQL<'a>: Sized {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self>;
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self>;
 }
 
 impl<'a> FromSQL<'a> for bool {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(one_of("01"), |b| b == '1')(s)
     }
 }
@@ -36,10 +37,25 @@ impl<'a> FromSQL<'a> for bool {
 // This won't panic if the SQL file is valid and the parser is using
 // the correct numeric types.
 macro_rules! number_impl {
-    ($type_name:ident $implementation:block ) => {
+    ($type_name:ty $implementation:block ) => {
         impl<'a> FromSQL<'a> for $type_name {
-            fn from_sql(s: &'a str) -> IResult<&'a str, $type_name> {
-                map($implementation, |num: &str| num.parse().unwrap())(s)
+            fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], $type_name> {
+                map($implementation, |num: &[u8]| {
+                    std::str::from_utf8(num)
+                        .expect(concat!(
+                            "valid UTF-8 in ",
+                            stringify!($type_name)
+                        ))
+                        .parse()
+                        .expect(concat!("valid ", stringify!($type_name)))
+                })(s)
+            }
+        }
+    };
+    ($type_name:ty $implementation:block $further_processing:block ) => {
+        impl<'a> FromSQL<'a> for $type_name {
+            fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], $type_name> {
+                map($implementation, $further_processing)(s)
             }
         }
     };
@@ -70,56 +86,80 @@ signed_int!(i64);
 macro_rules! float {
     ($t:ident) => {
         number_impl! { $t { recognize_float } }
+        number_impl! {
+            NotNan<$t> {
+                <$t>::from_sql
+            } {
+                |float| NotNan::new(float).expect("non-NaN")
+            }
+        }
     };
 }
 
 float!(f32);
 float!(f64);
 
-/// Characters that are escaped in the MediaWiki SQL dumps.
-const ESCAPED: &str = r#"\'""#;
-
-/// Use this for string types that have no escape sequences, like timestamps.
+/// Use this for string-like types that have no escape sequences,
+/// like timestamps, which only contain `[0-9: -]`.
 impl<'a> FromSQL<'a> for &'a str {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
-        preceded(
-            char('\''),
-            cut(terminated(
-                map(
-                    opt(escaped(none_of(ESCAPED), '\\', one_of(ESCAPED))),
-                    |o| o.unwrap_or(""),
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+        map(
+            preceded(
+                tag(B("'")),
+                terminated(
+                    map(opt(is_not(B("'"))), |opt| {
+                        opt.unwrap_or_else(|| B(""))
+                    }),
+                    tag(B("'")),
                 ),
-                char('\''),
-            )),
+            ),
+            |bytes| {
+                std::str::from_utf8(bytes)
+                    .expect("valid UTF-8 in unescaped string")
+            },
         )(s)
     }
 }
 
-/// Use this for string types that require unescaping, like page titles.
-impl<'a> FromSQL<'a> for Cow<'a, str> {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+/// Use this for string types that require unescaping and are guaranteed
+/// to be valid UTF-8, like page titles.
+impl<'a> FromSQL<'a> for String {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+        map(<Vec<u8>>::from_sql, |s| {
+            String::from_utf8(s)
+                .expect("valid UTF-8 in potentially escaped string")
+        })(s)
+    }
+}
+
+/// This is used for "strings" that sometimes contain invalid UTF-8, like the
+/// `cl_sortkey` field in the `categorylinks` table, which is truncated to 230
+// bits, sometimes in the middle of a UTF-8 sequence.
+impl<'a> FromSQL<'a> for Vec<u8> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         preceded(
-            char('\''),
-            cut(terminated(
+            tag(B("'")),
+            terminated(
                 map(
-                    opt(escaped(none_of(ESCAPED), '\\', one_of(ESCAPED))),
-                    |o: Option<&str>| {
-                        o.map(|s| {
-                            if s.contains('\\') {
-                                Cow::Owned(
-                                    s.replace(r"\\", r"\")
-                                        .replace(r"\'", r"'")
-                                        .replace("\\\"", "\""),
-                                )
-                            } else {
-                                Cow::Borrowed(s)
-                            }
-                        })
-                        .unwrap_or(Cow::Borrowed(""))
-                    },
+                    opt(escaped_transform(
+                        is_not(B("\\\"'\r\n\t")),
+                        '\\',
+                        |s: &[u8]| {
+                            map(one_of(B(r#"tnr\'""#)), |b| match b {
+                                't' => B("\t"),
+                                'n' => b"\n",
+                                'r' => b"\r",
+                                '\\' => b"\\",
+                                '\'' => b"'",
+                                '"' => b"\"",
+                                _ => unreachable!(),
+                            })(s)
+                        },
+                    )),
+                    |opt| opt.unwrap_or_else(Vec::new),
                 ),
-                char('\''),
-            )),
+                tag(B("'")),
+            ),
         )(s)
     }
 }
@@ -128,27 +168,70 @@ impl<'a, T> FromSQL<'a> for Option<T>
 where
     T: FromSQL<'a>,
 {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         alt((map(T::from_sql, Some), map(tag("NULL"), |_| None)))(s)
     }
 }
 
+/*
+impl_wrapper! {
+    #[doc = "
+Represents a SHA-1 hash in base 36, for instance in the
+[`img_sha1`](https://www.mediawiki.org/wiki/Manual:Image_table#img_sha1)
+field of the `image` table.
+"]
+    Sha1<'a>: &'a str
+}
+*/
 macro_rules! impl_wrapper {
-    (#[$comment:meta] $wrapper:ident: $wrapped:ty) => {
-        #[$comment]
+    // $l1 and $l2 must be identical.
+    // (#[$comment:meta] $wrapper:ident<$l:lifetime>: $wrapped:ty) => {
+    ($(#[$attrib:meta])* $wrapper:ident<$l1:lifetime>: &$l2:lifetime $wrapped_type:ty) => {
+        $(#[$attrib])*
+        #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+        pub struct $wrapper<$l1>(&$l2 $wrapped_type);
+
+        impl<$l1> FromSQL<$l1> for $wrapper<$l1> {
+            fn from_sql(s: &$l1 [u8]) -> IResult<&$l1 [u8], Self> {
+                map(<&$l2 $wrapped_type>::from_sql, $wrapper)(s)
+            }
+        }
+
+        #[allow(unused)]
+        impl<$l1> $wrapper<$l1> {
+            pub fn into_inner(self) -> &$l2 $wrapped_type {
+                self.into()
+            }
+        }
+
+        impl<$l1> From<$wrapper<$l1>> for &$l2 $wrapped_type {
+            fn from(val: $wrapper<$l1>) -> Self {
+                val.0
+            }
+        }
+
+        impl<$l1> From<&$l2 $wrapped_type> for $wrapper<$l1> {
+            fn from(val: &$l2 $wrapped_type) -> Self {
+                Self(val)
+            }
+        }
+    };
+    ($(#[$attrib:meta])* $wrapper:ident: $wrapped:ty) => {
+        $(#[$attrib])*
+        impl_wrapper! { @maybe_copy $wrapped [$wrapped] }
         #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $wrapper($wrapped);
+
+        impl<'input> FromSQL<'input> for $wrapper {
+            fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
+                map(<$wrapped>::from_sql, $wrapper)(s)
+            }
+        }
 
         #[allow(unused)]
         impl $wrapper {
             pub fn into_inner(self) -> $wrapped {
-                self.0
-            }
-        }
-
-        impl<'a> FromSQL<'a> for $wrapper {
-            fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
-                map(<$wrapped>::from_sql, $wrapper)(s)
+                self.into()
             }
         }
 
@@ -158,36 +241,52 @@ macro_rules! impl_wrapper {
             }
         }
 
+        impl<'a> From<&'a $wrapper> for &'a $wrapped {
+            fn from(val: &'a $wrapper) -> Self {
+                &val.0
+            }
+        }
+
         impl From<$wrapped> for $wrapper {
             fn from(val: $wrapped) -> Self {
                 Self(val)
             }
         }
     };
-    (#[$comment:meta] $wrapper:ident<$l:lifetime>: $wrapped:ty) => {
-        #[$comment]
+    (#[$attrib:meta] $wrapper:ident<$l:lifetime>: $wrapped:ty) => {
+        #[$attrib]
         #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $wrapper<$l>($wrapped);
 
         #[allow(unused)]
         impl<$l> $wrapper<$l> {
             pub fn into_inner(self) -> $wrapped {
-                self.0
+                self.into()
             }
         }
 
         impl<$l> FromSQL<$l> for $wrapper<$l> {
-            fn from_sql(s: &$l str) -> IResult<&'a str, Self> {
+            fn from_sql(s: &$l [u8]) -> IResult<&$l [u8], Self> {
                 map(<$wrapped>::from_sql, $wrapper)(s)
             }
         }
 
-        impl<$l, 'b: $l> From<&'b $wrapper<$l>> for &'b $wrapped {
-            fn from(val: &'b $wrapper) -> Self {
+        impl<$l, 'a: $l> From<&'a $wrapper<$l>> for &'a $wrapped {
+            fn from(val: &'a $wrapper) -> Self {
                 &val.0
             }
         }
+
+        impl<$l> From<$wrapper<$l>> for $wrapped {
+            fn from(val: $wrapper<$l>) -> Self {
+                val.0
+            }
+        }
     };
+    (@maybe_copy $wrapped:ident [$(u32)? $(i32)? $(&$l:lifetime $t:ty)?]) => {
+        #[derive(Copy)]
+    };
+    (@maybe_copy $wrapped:ty [$($anything:tt)?]) => {};
 }
 
 impl_wrapper! {
@@ -215,7 +314,7 @@ Represents the
 [`page_title`](https://www.mediawiki.org/wiki/Manual:Page_table#page_title)
 field of the `page` table, a title with underscores.
 "]
-    PageTitle<'a>: Cow<'a, str>
+    PageTitle: String
 }
 
 impl_wrapper! {
@@ -225,7 +324,7 @@ as in the
 [`ll_title`](https://www.mediawiki.org/wiki/Manual:Langlinks_table#ll_title)
 field of the `langlinks` table.
 "]
-    FullPageTitle<'a>: Cow<'a, str>
+    FullPageTitle: String
 }
 
 impl_wrapper! {
@@ -297,7 +396,7 @@ Represents the
 [`img_minor_mime`](https://www.mediawiki.org/wiki/Manual:Image_table#img_minor_mime)
 field of the `image` table.
 "]
-    MinorMime<'a>: Cow<'a, str>
+    MinorMime: String
 }
 
 impl_wrapper! {
@@ -351,7 +450,7 @@ Represents the name of a user group, such as the
 [`ug_group`](https://www.mediawiki.org/wiki/Manual:User_groups_table#ug_group)
 field of the `user_groups` table.
 "]
-    UserGroup<'a>: Cow<'a, str>
+    UserGroup: String
 }
 
 /// Represents a [timestamp](https://www.mediawiki.org/wiki/Manual:Timestamp)
@@ -362,9 +461,16 @@ field of the `user_groups` table.
 pub struct Timestamp(NaiveDateTime);
 
 impl<'input> FromSQL<'input> for Timestamp {
-    fn from_sql(s: &'input str) -> IResult<&'input str, Self> {
+    fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
         map(<&str>::from_sql, |s| {
-            Timestamp(NaiveDateTime::parse_from_str(s, "%Y%m%d%H%M%S").unwrap())
+            Timestamp(
+                if s.len() == 14 {
+                    NaiveDateTime::parse_from_str(s, "%Y%m%d%H%M%S")
+                } else {
+                    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+                }
+                .expect("valid date in yyyymmddhhmmss or yyyy-mm-dd hh:mm::ss format"),
+            )
         })(s)
     }
 }
@@ -387,7 +493,7 @@ pub enum Expiry {
 }
 
 impl<'input> FromSQL<'input> for Expiry {
-    fn from_sql(s: &'input str) -> IResult<&'input str, Self> {
+    fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
         alt((
             map(Timestamp::from_sql, Expiry::Timestamp),
             map(tag("infinity"), |_| Expiry::Infinity),
@@ -419,7 +525,7 @@ impl<'a> From<&'a str> for PageType<'a> {
 }
 
 impl<'a> FromSQL<'a> for PageType<'a> {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, PageType::from)(s)
     }
 }
@@ -449,7 +555,7 @@ impl<'a> From<&'a str> for PageAction<'a> {
 }
 
 impl<'a> FromSQL<'a> for PageAction<'a> {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, PageAction::from)(s)
     }
 }
@@ -488,7 +594,7 @@ impl<'a> From<&'a str> for ProtectionLevel<'a> {
 }
 
 impl<'a> FromSQL<'a> for ProtectionLevel<'a> {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, ProtectionLevel::from)(s)
     }
 }
@@ -525,9 +631,9 @@ The example given is nonsensical because `autoconfirmed` is a subset of
 `sysop`, and neither English Wikipedia nor English Wiktionary have any
 `page_restrictions` strings in this format, but perhaps another wiki does.
 */
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct PageRestrictionsOld<'a>(
-    HashMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>,
+    BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>,
 );
 
 impl<'a> PageRestrictionsOld<'a> {
@@ -568,7 +674,7 @@ impl<'a> FromIterator<(PageAction<'a>, Vec<ProtectionLevel<'a>>)>
 }
 
 impl<'a> FromSQL<'a> for PageRestrictionsOld<'a> {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, |contents| {
             PageRestrictionsOld(
                 contents
@@ -578,7 +684,7 @@ impl<'a> FromSQL<'a> for PageRestrictionsOld<'a> {
                         let mut type_and_levels = restriction.rsplitn(2, '=');
                         let level = type_and_levels
                             .next()
-                            .unwrap()
+                            .expect("level of page restriction")
                             .split(',')
                             .map(|l| l.into())
                             .collect();
@@ -599,26 +705,26 @@ fn test_page_restrictions() {
     use PageAction::*;
     use ProtectionLevel::*;
     assert_eq!(
-        PageRestrictionsOld::from_sql("'edit=autoconfirmed:move=sysop'"),
+        PageRestrictionsOld::from_sql(B("'edit=autoconfirmed:move=sysop'")),
         Ok((
-            "",
+            B(""),
             vec![(Edit, vec![Autoconfirmed]), (Move, vec![Sysop])]
                 .into_iter()
                 .collect()
         )),
     );
     assert_eq!(
-        PageRestrictionsOld::from_sql("''"),
-        Ok(("", PageRestrictionsOld(HashMap::new()))),
+        PageRestrictionsOld::from_sql(B("''")),
+        Ok((B(""), PageRestrictionsOld(BTreeMap::new()))),
     );
     assert_eq!(
-        PageRestrictionsOld::from_sql("'sysop'"),
-        Ok(("", vec![(All, vec![Sysop])].into_iter().collect())),
+        PageRestrictionsOld::from_sql(B("'sysop'")),
+        Ok((B(""), vec![(All, vec![Sysop])].into_iter().collect())),
     );
     assert_eq!(
-        PageRestrictionsOld::from_sql("'move=:edit='"),
+        PageRestrictionsOld::from_sql(B("'move=:edit='")),
         Ok((
-            "",
+            B(""),
             vec![(Move, vec![None]), (Edit, vec![None])]
                 .into_iter()
                 .collect()
@@ -658,7 +764,7 @@ impl<'a> From<&'a str> for ContentModel<'a> {
 }
 
 impl<'a> FromSQL<'a> for ContentModel<'a> {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, ContentModel::from)(s)
     }
 }
@@ -704,7 +810,7 @@ impl<'a> From<&'a str> for MediaType<'a> {
 }
 
 impl<'a> FromSQL<'a> for MediaType<'a> {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, MediaType::from)(s)
     }
 }
@@ -745,68 +851,50 @@ impl<'a> From<&'a str> for MajorMime<'a> {
 }
 
 impl<'a> FromSQL<'a> for MajorMime<'a> {
-    fn from_sql(s: &'a str) -> IResult<&'a str, Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, MajorMime::from)(s)
     }
 }
 
-/*
-pub fn rev_id(s: &str) -> IResult<&str, Option<i64>> {
-    nullable_integer(s)
-}
-*/
-
 #[test]
 fn test_bool() {
-    for (s, v) in &[("0", false), ("1", true)] {
-        assert_eq!(bool::from_sql(s), Ok(("", *v)));
+    for (s, v) in &[(B("0"), false), (B("1"), true)] {
+        assert_eq!(bool::from_sql(s), Ok((B(""), *v)));
     }
 }
 
 #[test]
 fn test_numbers() {
-    let f = "0.37569";
-    let res = f64::from_sql(f);
-    assert_eq!(res, Ok(("", f.parse().unwrap())));
+    fn from_utf8(s: &[u8]) -> &str {
+        std::str::from_utf8(s).unwrap()
+    }
 
-    for i in &["1", "-1"] {
-        assert_eq!(i32::from_sql(i), Ok(("", i.parse().unwrap())));
+    // Add a space to the end to avoid `nom::Err::Incomplete`.
+    let f = B("0.37569 ");
+    let res = f64::from_sql(f);
+    assert_eq!(res, Ok((B(" "), from_utf8(f).trim_end().parse().unwrap())));
+
+    for i in &[B("1 "), B("-1 ")] {
+        assert_eq!(
+            i32::from_sql(i),
+            Ok((B(" "), from_utf8(i).trim_end().parse().unwrap()))
+        );
     }
 }
 
 #[test]
 fn test_string() {
     let strings = &[
-        (r"'\''", r"'"),
-        (r"'\\'", r"\"),
-        (r"'string'", r"string"),
+        (B(r"'\''"), r"'"),
+        (br"'\\'", r"\"),
+        (br"'\n'", "\n"),
+        (br"'string'", r"string"),
         (
-            r#"'English_words_ending_in_\"-vorous\",_\"-phagous\"_and_similar_endings'"#,
+            br#"'English_words_ending_in_\"-vorous\",_\"-phagous\"_and_similar_endings'"#,
             r#"English_words_ending_in_"-vorous",_"-phagous"_and_similar_endings"#,
         ),
     ];
     for (s, unescaped) in strings {
-        let unchanged = &s[1..s.len() - 1];
-        assert_eq!(<&str>::from_sql(s), Ok(("", unchanged)));
-
-        let expected = if *unescaped == unchanged {
-            Cow::Borrowed(*unescaped)
-        } else {
-            Cow::Owned(unescaped.to_string())
-        };
-        println!("{:?} {:?} {:?}", s, Cow::from_sql(s), expected);
-        assert_eq!(Cow::from_sql(s), Ok(("", expected)));
+        assert_eq!(String::from_sql(s), Ok((B(""), unescaped.to_string())));
     }
 }
-
-/*
-#[test]
-fn test_page_restrictions() {
-    let raw = "'edit=autoconfirmed,sysop:move=sysop'";
-    let expected = PageRestrictionsOld(vec![
-        ("edit", vec!["autoconfirmed", "sysop"]),
-        ("move", vec!["sysop"]),
-    ]);
-    assert_eq!(PageRestrictionsOld::from_sql(raw), Ok(("", expected)));
-}
-*/

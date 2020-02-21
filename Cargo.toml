@@ -11,6 +11,8 @@ chrono = "0.4.10"
 nom = "5.0.1"
 memmap = "0.7.0"
 serde_json = "1.0.46"
+bstr = "0.2.11"
+ordered-float = "1.0.2"
 
 [[example]]
 name = "count_pages_by_content_model"
@@ -19,3 +21,7 @@ path = "examples/count_pages_by_content_model.rs"
 [[example]]
 name = "redirects_by_namespace"
 path = "examples/redirects_by_namespace.rs"
+
+[[example]]
+name = "template_redirects"
+path = "examples/template_redirects.rs"

@@ -1,3 +1,4 @@
+use bstr::ByteSlice;
 use memmap::Mmap;
 use std::collections::HashMap;
 use std::fs::File;
@@ -11,9 +12,7 @@ fn main() {
         Mmap::map(&File::open("page.sql").expect("page.sql not found"))
             .expect("could not memory map file")
     };
-    let mut iterator = iterate_sql_insertions::<Page>(unsafe {
-        &std::str::from_utf8_unchecked(&sql)
-    });
+    let mut iterator = iterate_sql_insertions::<Page>(&sql);
     let counts: HashMap<Option<ContentModel>, usize> = iterator.fold(
         HashMap::new(),
         |mut counts, Page { content_model, .. }| {
@@ -23,20 +22,8 @@ fn main() {
         },
     );
     println!("{:?}", counts);
-    match iterator.finish() {
-        Ok((remaining_input, _)) => {
-            dbg!(remaining_input.chars().take(1000).collect::<String>());
-        }
-        Err(e) => {
-            use nom::Err;
-            match e {
-                Err::Failure((t, e)) | Err::Error((t, e)) => {
-                    dbg!(t.chars().take(1000).collect::<String>(), e);
-                }
-                _ => {
-                    eprintln!("other error");
-                }
-            }
-        }
-    };
+    assert!(iterator
+        .finish()
+        .map(|(input, _)| &input.chars().take(4).collect::<String>() == ";\n/*")
+        .unwrap_or(false));
 }

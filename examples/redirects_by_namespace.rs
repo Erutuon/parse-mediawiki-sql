@@ -1,7 +1,6 @@
 use memmap::Mmap;
 use serde_json::Value;
 use std::collections::{BTreeMap as Map, BTreeSet as Set};
-use std::borrow::Cow;
 use std::fs::File;
 
 use parse_mediawiki_sql::{
@@ -15,7 +14,11 @@ unsafe fn memory_map(file: &str) -> Mmap {
         .expect("could not memory map file")
 }
 
-fn get_namespace_id_to_name<'a>(json: &'a str) -> Map<PageNamespace, String> {
+fn get_namespace_id_to_name<'a>(
+    filepath: &'a str,
+) -> Map<PageNamespace, String> {
+    let siteinfo_namespaces = unsafe { memory_map(filepath) };
+    let json = unsafe { &std::str::from_utf8_unchecked(&siteinfo_namespaces) };
     let mut data: Value = serde_json::from_str(json).unwrap();
     match data["query"].take()["namespaces"].take() {
         Value::Object(map) => map
@@ -23,12 +26,9 @@ fn get_namespace_id_to_name<'a>(json: &'a str) -> Map<PageNamespace, String> {
             .map(|(k, v)| {
                 let k = match k.parse::<i32>() {
                     Ok(n) => n.into(),
-                    Err(e) => panic!("{} is not a valid integer", k),
+                    Err(_) => panic!("{} is not a valid integer", k),
                 };
-                (
-                    k,
-                    v.as_object().unwrap()["*"].as_str().unwrap().to_string(),
-                )
+                (k, v.as_object().unwrap()["*"].as_str().unwrap().to_string())
             })
             .collect(),
         _ => panic!("bad json apparently"),
@@ -43,7 +43,7 @@ fn readable_title<'a>(
     namespace_id_to_name
         .get(&namespace)
         .map(|n| {
-            let title: &Cow<_> = title.into();
+            let title: &String = title.into();
             if *n == "" {
                 title.to_string()
             } else {
@@ -53,21 +53,24 @@ fn readable_title<'a>(
         .unwrap()
 }
 
+// Takes a list of namespaces, which must be parsable as `i32`,
+// as arguments. Expects page.sql and redirect.sql and siteinfo-namespaces.json
+// in the current directory.
 fn main() {
     let page_sql = unsafe { memory_map("page.sql") };
     let redirect_sql = unsafe { memory_map("redirect.sql") };
-    let siteinfo_namespaces = unsafe { memory_map("siteinfo-namespaces.json") };
-    let namespace_id_to_name = get_namespace_id_to_name(unsafe {
-        &std::str::from_utf8_unchecked(&siteinfo_namespaces)
-    });
-    let namespaces: Result<Set<PageNamespace>, _> = std::env::args()
+    let namespace_id_to_name =
+        get_namespace_id_to_name("siteinfo-namespaces.json");
+    let namespaces = std::env::args()
         .skip(1)
         .map(|s| s.parse::<i32>().map(|n| n.into()))
-        .collect();
-    let namespaces = namespaces.unwrap();
-    let mut pages = iterate_sql_insertions::<Page>(unsafe {
-        &std::str::from_utf8_unchecked(&page_sql)
-    });
+        .collect::<Result<Set<PageNamespace>, _>>()
+        .unwrap();
+    if namespaces.is_empty() {
+        eprintln!("No namespaces provided");
+        std::process::exit(-1);
+    }
+    let mut pages = iterate_sql_insertions::<Page>(&page_sql);
     let id_to_title: Map<_, _> = pages
         .filter(
             |Page {
@@ -85,9 +88,7 @@ fn main() {
              }| (id, (title, namespace)),
         )
         .collect();
-    let mut redirects = iterate_sql_insertions::<Redirect>(unsafe {
-        &std::str::from_utf8_unchecked(&redirect_sql)
-    });
+    let mut redirects = iterate_sql_insertions::<Redirect>(&redirect_sql);
     let source_to_target: Map<_, _> = redirects
         .filter_map(
             |Redirect {
