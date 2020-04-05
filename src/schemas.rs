@@ -14,7 +14,7 @@ use ordered_float::NotNan;
 
 use crate::types::{
     ActorId, CategoryId, ChangeTagDefId, ChangeTagId, CommentId, ContentModel,
-    Expiry, ExternalLinksId, FromSQL, FullPageTitle, LogId, MajorMime,
+    Expiry, ExternalLinksId, FromSql, FullPageTitle, LogId, MajorMime,
     MediaType, MinorMime, PageAction, PageId, PageNamespace,
     PageRestrictionsId, PageRestrictionsOld, PageTitle, PageType,
     ProtectionLevel, RecentChangesId, RevisionId, Sha1, Timestamp, UserGroup,
@@ -34,7 +34,7 @@ macro_rules! impl_from_sql {
             $($(#[$field_meta])* pub $field_names: $type_names),+
         }
 
-        impl<'input> FromSQL<'input> for $output_type {
+        impl<'input> FromSql<'input> for $output_type {
             fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
                 preceded(
                     char('('),
@@ -58,7 +58,7 @@ macro_rules! impl_from_sql {
             $($(#[$field_meta])* pub $field_names: $type_names),+
         }
 
-        impl<$life> FromSQL<$life> for $output_type<$life> {
+        impl<$life> FromSql<$life> for $output_type<$life> {
             fn from_sql(s: &$life [u8]) -> IResult<&$life [u8], Self> {
                 preceded(
                     char('('),

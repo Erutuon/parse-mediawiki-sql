@@ -14,28 +14,28 @@ unsafe fn memory_map(file: &str) -> Mmap {
         .expect("could not memory map file")
 }
 
-fn get_namespace_id_to_name<'a>(
-    filepath: &'a str,
+fn get_namespace_id_to_name(
+    filepath: &str,
 ) -> Map<PageNamespace, String> {
     let siteinfo_namespaces = unsafe { memory_map(filepath) };
-    let json = unsafe { &std::str::from_utf8_unchecked(&siteinfo_namespaces) };
+    let json = unsafe { std::str::from_utf8_unchecked(&siteinfo_namespaces) };
     let mut data: Value = serde_json::from_str(json).unwrap();
     match data["query"].take()["namespaces"].take() {
         Value::Object(map) => map
             .into_iter()
             .map(|(k, v)| {
-                let k = match k.parse::<i32>() {
-                    Ok(n) => n.into(),
-                    Err(_) => panic!("{} is not a valid integer", k),
-                };
-                (k, v.as_object().unwrap()["*"].as_str().unwrap().to_string())
+                if let Ok(namespace) = k.parse::<i32>().map(PageNamespace::from) {
+                    (namespace, v.as_object().unwrap()["*"].as_str().unwrap().to_string())
+                } else {
+                    panic!("{} is not a valid integer", k);
+                }
             })
             .collect(),
         _ => panic!("bad json apparently"),
     }
 }
 
-fn readable_title<'a>(
+fn readable_title(
     namespace_id_to_name: &Map<PageNamespace, String>,
     title: &PageTitle,
     namespace: &PageNamespace,

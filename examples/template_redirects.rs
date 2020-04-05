@@ -44,7 +44,7 @@ fn main() {
         })
         .fold(Map::new(), |mut map, (from, title)| {
             let entry = map
-                .entry(title.clone().into_inner())
+                .entry(title.into_inner())
                 .or_insert_with(Vec::new);
             entry.push(from.clone().into_inner());
             map

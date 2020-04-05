@@ -1,4 +1,4 @@
-use crate::types::FromSQL;
+use crate::types::FromSql;
 use bstr::{ByteSlice, B};
 use nom::{
     branch::alt,
@@ -23,7 +23,7 @@ pub fn iterate_sql_insertions<'a, T>(
     impl Fn(&'a [u8]) -> IResult<&'a [u8], T, (&'a [u8], ErrorKind)>,
 >
 where
-    T: FromSQL<'a> + 'a,
+    T: FromSql<'a> + 'a,
 {
     let sql = &sql[sql.find("INSERT INTO").expect("INSERT INTO statement")..];
     iterator(
@@ -42,7 +42,7 @@ where
                 ))),
                 tag(","),
             )),
-            FromSQL::from_sql,
+            FromSql::from_sql,
         ),
     )
 }

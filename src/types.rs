@@ -1,7 +1,7 @@
 /*!
 Defines types that represent fields in tables of the
 [MediaWiki database](https://www.mediawiki.org/wiki/Manual:Database_layout),
-and the `FromSQL` trait to convert them from SQL syntax.
+and the `FromSql` trait to convert them from SQL syntax.
 */
 
 use bstr::B;
@@ -24,11 +24,11 @@ use std::{
 
 /// Trait containing a function that infallibly converts from an SQL string
 /// to a Rust type, which can borrow from the string or not.
-pub trait FromSQL<'a>: Sized {
+pub trait FromSql<'a>: Sized {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self>;
 }
 
-impl<'a> FromSQL<'a> for bool {
+impl<'a> FromSql<'a> for bool {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(one_of("01"), |b| b == '1')(s)
     }
@@ -38,7 +38,7 @@ impl<'a> FromSQL<'a> for bool {
 // the correct numeric types.
 macro_rules! number_impl {
     ($type_name:ty $implementation:block ) => {
-        impl<'a> FromSQL<'a> for $type_name {
+        impl<'a> FromSql<'a> for $type_name {
             fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], $type_name> {
                 map($implementation, |num: &[u8]| {
                     std::str::from_utf8(num)
@@ -53,7 +53,7 @@ macro_rules! number_impl {
         }
     };
     ($type_name:ty $implementation:block $further_processing:block ) => {
-        impl<'a> FromSQL<'a> for $type_name {
+        impl<'a> FromSql<'a> for $type_name {
             fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], $type_name> {
                 map($implementation, $further_processing)(s)
             }
@@ -101,7 +101,7 @@ float!(f64);
 
 /// Use this for string-like types that have no escape sequences,
 /// like timestamps, which only contain `[0-9: -]`.
-impl<'a> FromSQL<'a> for &'a str {
+impl<'a> FromSql<'a> for &'a str {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(
             preceded(
@@ -123,7 +123,7 @@ impl<'a> FromSQL<'a> for &'a str {
 
 /// Use this for string types that require unescaping and are guaranteed
 /// to be valid UTF-8, like page titles.
-impl<'a> FromSQL<'a> for String {
+impl<'a> FromSql<'a> for String {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<Vec<u8>>::from_sql, |s| {
             String::from_utf8(s)
@@ -135,7 +135,7 @@ impl<'a> FromSQL<'a> for String {
 /// This is used for "strings" that sometimes contain invalid UTF-8, like the
 /// `cl_sortkey` field in the `categorylinks` table, which is truncated to 230
 // bits, sometimes in the middle of a UTF-8 sequence.
-impl<'a> FromSQL<'a> for Vec<u8> {
+impl<'a> FromSql<'a> for Vec<u8> {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         preceded(
             tag(B("'")),
@@ -164,9 +164,9 @@ impl<'a> FromSQL<'a> for Vec<u8> {
     }
 }
 
-impl<'a, T> FromSQL<'a> for Option<T>
+impl<'a, T> FromSql<'a> for Option<T>
 where
-    T: FromSQL<'a>,
+    T: FromSql<'a>,
 {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         alt((map(T::from_sql, Some), map(tag("NULL"), |_| None)))(s)
@@ -191,7 +191,7 @@ macro_rules! impl_wrapper {
         #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $wrapper<$l1>(&$l2 $wrapped_type);
 
-        impl<$l1> FromSQL<$l1> for $wrapper<$l1> {
+        impl<$l1> FromSql<$l1> for $wrapper<$l1> {
             fn from_sql(s: &$l1 [u8]) -> IResult<&$l1 [u8], Self> {
                 map(<&$l2 $wrapped_type>::from_sql, $wrapper)(s)
             }
@@ -222,7 +222,7 @@ macro_rules! impl_wrapper {
         #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $wrapper($wrapped);
 
-        impl<'input> FromSQL<'input> for $wrapper {
+        impl<'input> FromSql<'input> for $wrapper {
             fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
                 map(<$wrapped>::from_sql, $wrapper)(s)
             }
@@ -265,7 +265,7 @@ macro_rules! impl_wrapper {
             }
         }
 
-        impl<$l> FromSQL<$l> for $wrapper<$l> {
+        impl<$l> FromSql<$l> for $wrapper<$l> {
             fn from_sql(s: &$l [u8]) -> IResult<&$l [u8], Self> {
                 map(<$wrapped>::from_sql, $wrapper)(s)
             }
@@ -460,7 +460,7 @@ field of the `user_groups` table.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Timestamp(NaiveDateTime);
 
-impl<'input> FromSQL<'input> for Timestamp {
+impl<'input> FromSql<'input> for Timestamp {
     fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
         map(<&str>::from_sql, |s| {
             Timestamp(
@@ -492,7 +492,7 @@ pub enum Expiry {
     Infinity,
 }
 
-impl<'input> FromSQL<'input> for Expiry {
+impl<'input> FromSql<'input> for Expiry {
     fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
         alt((
             map(Timestamp::from_sql, Expiry::Timestamp),
@@ -524,7 +524,7 @@ impl<'a> From<&'a str> for PageType<'a> {
     }
 }
 
-impl<'a> FromSQL<'a> for PageType<'a> {
+impl<'a> FromSql<'a> for PageType<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, PageType::from)(s)
     }
@@ -554,7 +554,7 @@ impl<'a> From<&'a str> for PageAction<'a> {
     }
 }
 
-impl<'a> FromSQL<'a> for PageAction<'a> {
+impl<'a> FromSql<'a> for PageAction<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, PageAction::from)(s)
     }
@@ -593,7 +593,7 @@ impl<'a> From<&'a str> for ProtectionLevel<'a> {
     }
 }
 
-impl<'a> FromSQL<'a> for ProtectionLevel<'a> {
+impl<'a> FromSql<'a> for ProtectionLevel<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, ProtectionLevel::from)(s)
     }
@@ -673,7 +673,7 @@ impl<'a> FromIterator<(PageAction<'a>, Vec<ProtectionLevel<'a>>)>
     }
 }
 
-impl<'a> FromSQL<'a> for PageRestrictionsOld<'a> {
+impl<'a> FromSql<'a> for PageRestrictionsOld<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, |contents| {
             PageRestrictionsOld(
@@ -763,7 +763,7 @@ impl<'a> From<&'a str> for ContentModel<'a> {
     }
 }
 
-impl<'a> FromSQL<'a> for ContentModel<'a> {
+impl<'a> FromSql<'a> for ContentModel<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, ContentModel::from)(s)
     }
@@ -809,7 +809,7 @@ impl<'a> From<&'a str> for MediaType<'a> {
     }
 }
 
-impl<'a> FromSQL<'a> for MediaType<'a> {
+impl<'a> FromSql<'a> for MediaType<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, MediaType::from)(s)
     }
@@ -850,7 +850,7 @@ impl<'a> From<&'a str> for MajorMime<'a> {
     }
 }
 
-impl<'a> FromSQL<'a> for MajorMime<'a> {
+impl<'a> FromSql<'a> for MajorMime<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
         map(<&str>::from_sql, MajorMime::from)(s)
     }
@@ -895,6 +895,6 @@ fn test_string() {
         ),
     ];
     for (s, unescaped) in strings {
-        assert_eq!(String::from_sql(s), Ok((B(""), unescaped.to_string())));
+        assert_eq!(String::from_sql(s), Ok((B(""), (*unescaped).to_string())));
     }
 }
