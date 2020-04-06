@@ -9,14 +9,15 @@ use parse_mediawiki_sql::{
     types::{PageNamespace, PageTitle},
 };
 
-unsafe fn memory_map(file: &str) -> Mmap {
-    Mmap::map(&File::open(file).expect("file not found"))
-        .expect("could not memory map file")
+unsafe fn memory_map(path: &str) -> Mmap {
+    Mmap::map(
+        &File::open(path)
+            .unwrap_or_else(|e| panic!("Failed to open {}: {}", &path, e)),
+    )
+    .unwrap_or_else(|e| panic!("Failed to memory-map {}: {}", &path, e))
 }
 
-fn get_namespace_id_to_name(
-    filepath: &str,
-) -> Map<PageNamespace, String> {
+fn get_namespace_id_to_name(filepath: &str) -> Map<PageNamespace, String> {
     let siteinfo_namespaces = unsafe { memory_map(filepath) };
     let json = unsafe { std::str::from_utf8_unchecked(&siteinfo_namespaces) };
     let mut data: Value = serde_json::from_str(json).unwrap();
@@ -24,8 +25,15 @@ fn get_namespace_id_to_name(
         Value::Object(map) => map
             .into_iter()
             .map(|(k, v)| {
-                if let Ok(namespace) = k.parse::<i32>().map(PageNamespace::from) {
-                    (namespace, v.as_object().unwrap()["*"].as_str().unwrap().to_string())
+                if let Ok(namespace) = k.parse::<i32>().map(PageNamespace::from)
+                {
+                    (
+                        namespace,
+                        v.as_object().unwrap()["*"]
+                            .as_str()
+                            .unwrap()
+                            .to_string(),
+                    )
                 } else {
                     panic!("{} is not a valid integer", k);
                 }
@@ -63,7 +71,7 @@ fn main() {
         get_namespace_id_to_name("siteinfo-namespaces.json");
     let namespaces = std::env::args()
         .skip(1)
-        .map(|s| s.parse::<i32>().map(|n| n.into()))
+        .map(|s| s.parse::<i32>().map(PageNamespace::from))
         .collect::<Result<Set<PageNamespace>, _>>()
         .unwrap();
     if namespaces.is_empty() {

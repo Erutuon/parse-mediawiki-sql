@@ -9,9 +9,12 @@ use parse_mediawiki_sql::{
     types::PageNamespace,
 };
 
-unsafe fn memory_map(file: &str) -> Mmap {
-    Mmap::map(&File::open(file).expect("file not found"))
-        .expect("could not memory map file")
+unsafe fn memory_map(path: &str) -> Mmap {
+    Mmap::map(
+        &File::open(path)
+            .unwrap_or_else(|e| panic!("Failed to open {}: {}", &path, e)),
+    )
+    .unwrap_or_else(|e| panic!("Failed to memory-map {}: {}", &path, e))
 }
 
 // Expects page.sql and redirect.sql in the current directory.
@@ -43,9 +46,7 @@ fn main() {
             id_to_title.get(&from).map(|from| (from, title))
         })
         .fold(Map::new(), |mut map, (from, title)| {
-            let entry = map
-                .entry(title.into_inner())
-                .or_insert_with(Vec::new);
+            let entry = map.entry(title.into_inner()).or_insert_with(Vec::new);
             entry.push(from.clone().into_inner());
             map
         });
