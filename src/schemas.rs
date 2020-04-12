@@ -23,59 +23,82 @@ use crate::types::{
 
 macro_rules! impl_from_sql {
     (
-        $(#[$top_meta:meta])*
+        $table_name:ident
         $output_type:ident {
             $($(#[$field_meta:meta])* $field_names:ident: $type_names:ty,)+
         }
     ) => {
-        $(#[$top_meta])*
-        #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-        pub struct $output_type {
-            $($(#[$field_meta])* pub $field_names: $type_names),+
-        }
+        impl_from_sql! {
+            @with_doc $table_name
+            #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+            pub struct $output_type {
+                $($(#[$field_meta])* pub $field_names: $type_names),+
+            }
 
-        impl<'input> FromSql<'input> for $output_type {
-            fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
-                preceded(
-                    char('('),
-                    terminated(
-                        map(
-                            tuple(( $( terminated(<$type_names>::from_sql, opt(char(','))) ),+ )),
-                            |($($field_names),+)| $output_type { $($field_names),+ }),
-                        char(')')))(s)
+            impl<'input> FromSql<'input> for $output_type {
+                fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
+                    preceded(
+                        char('('),
+                        terminated(
+                            map(
+                                tuple(( $( terminated(<$type_names>::from_sql, opt(char(','))) ),+ )),
+                                |($($field_names),+)| $output_type { $($field_names),+ }),
+                            char(')')))(s)
+                }
             }
         }
     };
     (
-        $(#[$top_meta:meta])*
+        $table_name:ident
         $output_type:ident<$life:lifetime> {
             $($(#[$field_meta:meta])* $field_names:ident: $type_names:ty,)+
         }
     ) => {
-        $(#[$top_meta])*
-        #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-        pub struct $output_type<$life> {
-            $($(#[$field_meta])* pub $field_names: $type_names),+
-        }
+        impl_from_sql! {
+            @with_doc $table_name
+            #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+            pub struct $output_type<$life> {
+                $($(#[$field_meta])* pub $field_names: $type_names),+
+            }
 
-        impl<$life> FromSql<$life> for $output_type<$life> {
-            fn from_sql(s: &$life [u8]) -> IResult<&$life [u8], Self> {
-                preceded(
-                    char('('),
-                    terminated(
-                        cut(
-                            map(
-                                tuple(( $( terminated(<$type_names>::from_sql, opt(char(','))) ),+ )),
-                                |($($field_names),+)| $output_type { $($field_names),+ }),
-                            ),
-                        char(')')))(s)
+            impl<$life> FromSql<$life> for $output_type<$life> {
+                fn from_sql(s: &$life [u8]) -> IResult<&$life [u8], Self> {
+                    preceded(
+                        char('('),
+                        terminated(
+                            cut(
+                                map(
+                                    tuple(( $( terminated(<$type_names>::from_sql, opt(char(','))) ),+ )),
+                                    |($($field_names),+)| $output_type { $($field_names),+ }),
+                                ),
+                            char(')')))(s)
+                }
             }
         }
+    };
+    (@with_doc $table_name:ident $($metas:meta)* $($items:item)+) => {
+        impl_from_sql! {
+            @with_doc_comment
+            #[doc = concat!(
+                "Represents the [`",
+                stringify!($table_name),
+                "` table](https://www.mediawiki.org/wiki/Manual:",
+                stringify!($table_name),
+                "_table)."
+            )]
+            $($metas)*
+            $($items)+
+        }
+    };
+    (@with_doc_comment #[doc = $comment:expr] $($metas:meta)* $($items:item)+) => {
+        #[doc = $comment]
+        $($metas)*
+        $($items)+
     };
 }
 
 impl_from_sql! {
-    /// Represents the [`category` table](https://www.mediawiki.org/wiki/Manual:category_table).
+    category
     Category {
         id: CategoryId,
         title: PageTitle,
@@ -86,7 +109,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`categorylinks` table](https://www.mediawiki.org/wiki/Manual:categorylinks_table).
+    categorylinks
     CategoryLinks<'input> {
         id: PageId,
         to: PageTitle,
@@ -105,7 +128,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`change_tag_def` table](https://www.mediawiki.org/wiki/Manual:change_tag_def_table).
+    change_tag_def
     ChangeTagDef {
         id: ChangeTagDefId,
         name: String,
@@ -115,7 +138,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`change_tag` table](https://www.mediawiki.org/wiki/Manual:change_tag_table).
+    change_tag
     ChangeTag {
         id: ChangeTagId,
         recent_change_id: Option<RecentChangesId>,
@@ -127,7 +150,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`externallinks` table](https://www.mediawiki.org/wiki/Manual:externallinks_table).
+    externallinks
     ExternalLinks {
         id: ExternalLinksId,
         from: PageId,
@@ -138,7 +161,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`image` table](https://www.mediawiki.org/wiki/Manual:image_table).
+    image
     Image<'input> {
         name: PageTitle,
         size: u32,
@@ -161,7 +184,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`imagelinks` table](https://www.mediawiki.org/wiki/Manual:imagelinks_table).
+    imagelinks
     ImageLinks {
         from: PageId,
         namespace: PageNamespace,
@@ -170,7 +193,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`iwlinks` table](https://www.mediawiki.org/wiki/Manual:iwlinks_table).
+    iwlinks
     InterwikiLinks<'input> {
         from: PageId,
         prefix: &'input str,
@@ -179,7 +202,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`langlinks` table](https://www.mediawiki.org/wiki/Manual:langlinks_table).
+    langlinks
     LangLinks<'input> {
         from: PageId,
         lang: &'input str,
@@ -188,7 +211,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`page_restrictions` table](https://www.mediawiki.org/wiki/Manual:page_restrictions_table).
+    page_restrictions
     PageRestrictions<'input> {
         page: PageId,
         r#type: PageAction<'input>,
@@ -201,7 +224,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`page` table](https://www.mediawiki.org/wiki/Manual:page_table).
+    page
     Page<'input> {
         id: PageId,
         namespace: PageNamespace,
@@ -220,7 +243,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`pagelinks` table](https://www.mediawiki.org/wiki/Manual:pagelinks_table).
+    pagelinks
     PageLinks {
         from: PageId,
         from_namespace: PageNamespace,
@@ -230,7 +253,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`protected_titles` table](https://www.mediawiki.org/wiki/Manual:protected_titles_table).
+    protected_titles
     ProtectedTitles<'input> {
         namespace: PageNamespace,
         title: PageTitle,
@@ -243,7 +266,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`redirect` table](https://www.mediawiki.org/wiki/Manual:redirect_table).
+    redirect
     Redirect<'input> {
         from: PageId,
         namespace: PageNamespace,
@@ -275,7 +298,7 @@ fn test_redirect() {
 }
 
 impl_from_sql! {
-    /// Represents the [`templatelinks` table](https://www.mediawiki.org/wiki/Manual:templatelinks_table).
+    templatelinks
     TemplateLinks {
         from: PageId,
         namespace: PageNamespace,
@@ -285,7 +308,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`user_former_groups` table](https://www.mediawiki.org/wiki/Manual:user_former_groups_table).
+    user_former_groups
     UserFormerGroups {
         user: UserId,
         group: UserGroup,
@@ -293,7 +316,7 @@ impl_from_sql! {
 }
 
 impl_from_sql! {
-    /// Represents the [`user_groups` table](https://www.mediawiki.org/wiki/Manual:user_groups_table).
+    user_groups
     UserGroups {
         user: UserId,
         group: UserGroup,
