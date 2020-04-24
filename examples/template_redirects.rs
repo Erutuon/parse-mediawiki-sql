@@ -20,7 +20,7 @@ unsafe fn memory_map(path: &str) -> Mmap {
 // Expects page.sql and redirect.sql in the current directory.
 // Generates JSON: { target: [source1, source2, source3, ...], ...}
 fn main() {
-    let args: Vec<_> = std::env::args().take(2).collect();
+    let args: Vec<_> = std::env::args().skip(1).take(2).collect();
     let page_sql = unsafe {
         memory_map(args.get(0).map(String::as_str).unwrap_or("page.sql"))
     };
@@ -41,10 +41,12 @@ fn main() {
         )
         .map(|Page { id, title, .. }| (id, title))
         .collect();
-    assert!(pages
-        .finish()
-        .map(|(input, _)| &input.chars().take(4).collect::<String>() == ";\n/*")
-        .unwrap_or(false));
+    assert_eq!(
+        pages
+            .finish()
+            .map(|(input, _)| input.chars().take(4).collect::<String>()),
+        Ok(";\n/*".into())
+    );
     let mut redirects = iterate_sql_insertions::<Redirect>(&redirect_sql);
     let target_to_sources: Map<_, _> = redirects
         .filter_map(|Redirect { from, title, .. }| {
@@ -55,9 +57,11 @@ fn main() {
             entry.push(from.clone().into_inner());
             map
         });
-    assert!(redirects
-        .finish()
-        .map(|(input, _)| &input.chars().take(4).collect::<String>() == ";\n/*")
-        .unwrap_or(false));
+    assert_eq!(
+        redirects
+            .finish()
+            .map(|(input, _)| input.chars().take(4).collect::<String>()),
+        Ok(";\n/*".into())
+    );
     serde_json::to_writer(std::io::stdout(), &target_to_sources).unwrap();
 }

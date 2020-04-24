@@ -66,7 +66,7 @@ fn readable_title(
 
 // Expects categorylinks.sql and page.sql in the current directory.
 fn main() {
-    let args: Vec<_> = std::env::args().take(3).collect();
+    let args: Vec<_> = std::env::args().skip(1).take(3).collect();
     let page_sql = unsafe {
         memory_map(args.get(0).map(String::as_str).unwrap_or("page.sql"))
     };
