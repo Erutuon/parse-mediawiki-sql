@@ -8,9 +8,13 @@ use parse_mediawiki_sql::{
 };
 
 fn main() {
+    let args: Vec<_> = std::env::args().take(1).collect();
     let sql = unsafe {
-        Mmap::map(&File::open("page.sql").expect("page.sql not found"))
-            .expect("could not memory map file")
+        Mmap::map(
+            &File::open(args.get(0).map(String::as_str).unwrap_or("page.sql"))
+                .expect("page.sql not found"),
+        )
+        .expect("could not memory map file")
     };
     let mut iterator = iterate_sql_insertions::<Page>(&sql);
     let counts: HashMap<Option<ContentModel>, usize> = iterator.fold(

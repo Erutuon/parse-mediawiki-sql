@@ -66,8 +66,22 @@ fn readable_title(
 
 // Expects categorylinks.sql and page.sql in the current directory.
 fn main() {
-    let page_sql = unsafe { memory_map("page.sql") };
-    let category_links_sql = unsafe { memory_map("categorylinks.sql") };
+    let args: Vec<_> = std::env::args().take(3).collect();
+    let page_sql = unsafe {
+        memory_map(args.get(0).map(String::as_str).unwrap_or("page.sql"))
+    };
+    let category_links_sql = unsafe {
+        memory_map(
+            args.get(1)
+                .map(String::as_str)
+                .unwrap_or("categorylinks.sql"),
+        )
+    };
+    let namespace_id_to_name = get_namespace_id_to_name(
+        args.get(2)
+            .map(String::as_str)
+            .unwrap_or("siteinfo-namespaces.json"),
+    );
     let mut category_links =
         iterate_sql_insertions::<CategoryLinks>(&category_links_sql);
     let mut pages = iterate_sql_insertions::<Page>(&page_sql);
@@ -99,8 +113,6 @@ fn main() {
             }
         }
     };
-    let namespace_id_to_name =
-        get_namespace_id_to_name("siteinfo-namespaces.json");
     let page_to_categories = pages.fold(
         Map::new(),
         |mut map,

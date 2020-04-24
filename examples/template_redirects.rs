@@ -20,8 +20,13 @@ unsafe fn memory_map(path: &str) -> Mmap {
 // Expects page.sql and redirect.sql in the current directory.
 // Generates JSON: { target: [source1, source2, source3, ...], ...}
 fn main() {
-    let page_sql = unsafe { memory_map("page.sql") };
-    let redirect_sql = unsafe { memory_map("redirect.sql") };
+    let args: Vec<_> = std::env::args().take(2).collect();
+    let page_sql = unsafe {
+        memory_map(args.get(0).map(String::as_str).unwrap_or("page.sql"))
+    };
+    let redirect_sql = unsafe {
+        memory_map(args.get(1).map(String::as_str).unwrap_or("redirect.sql"))
+    };
     let mut pages = iterate_sql_insertions::<Page>(&page_sql);
     let template_namespace = PageNamespace::from(10);
     // This works if every template redirect in redirect.sql is also marked
