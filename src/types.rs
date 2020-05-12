@@ -217,8 +217,8 @@ macro_rules! impl_wrapper {
         }
     };
     ($(#[$attrib:meta])* $wrapper:ident: $wrapped:ty) => {
-        $(#[$attrib])*
         impl_wrapper! { @maybe_copy $wrapped [$wrapped] }
+        $(#[$attrib])*
         #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $wrapper($wrapped);
 
