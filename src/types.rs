@@ -396,7 +396,7 @@ Represents the
 [`img_minor_mime`](https://www.mediawiki.org/wiki/Manual:Image_table#img_minor_mime)
 field of the `image` table.
 "]
-    MinorMime: String
+    MinorMime<'a>: &'a str
 }
 
 impl_wrapper! {
@@ -450,7 +450,7 @@ Represents the name of a user group, such as the
 [`ug_group`](https://www.mediawiki.org/wiki/Manual:User_groups_table#ug_group)
 field of the `user_groups` table.
 "]
-    UserGroup: String
+    UserGroup<'a>: &'a str
 }
 
 /// Represents a [timestamp](https://www.mediawiki.org/wiki/Manual:Timestamp)

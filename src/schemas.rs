@@ -171,7 +171,7 @@ impl_from_sql! {
         bits: i32,
         media_type: MediaType<'input>,
         major_mime: MajorMime<'input>,
-        minor_mime: MinorMime,
+        minor_mime: MinorMime<'input>,
         description_id: CommentId,
         actor: ActorId,
         timestamp: Timestamp,
@@ -309,17 +309,17 @@ impl_from_sql! {
 
 impl_from_sql! {
     user_former_groups
-    UserFormerGroups {
+    UserFormerGroups<'input> {
         user: UserId,
-        group: UserGroup,
+        group: UserGroup<'input>,
     }
 }
 
 impl_from_sql! {
     user_groups
-    UserGroups {
+    UserGroups<'input> {
         user: UserId,
-        group: UserGroup,
+        group: UserGroup<'input>,
         expiry: Option<Expiry>,
     }
 }
