@@ -2,26 +2,22 @@
 name = "parse-mediawiki-sql"
 version = "0.1.0"
 authors = ["Erutuon <5840197+Erutuon@users.noreply.github.com>"]
+license = "MIT"
+description = "A parser for SQL dumps of a MediaWiki database"
+homepage = "https://github.com/Erutuon/parse-mediawiki-sql"
+repository = "https://github.com/Erutuon/parse-mediawiki-sql"
+readme = "README.md"
 edition = "2018"
 
 [lib]
 name = "parse_mediawiki_sql"
+
 [dependencies]
-chrono = "0.4.10"
-nom = "5.0.1"
-memmap = "0.7.0"
-serde_json = "1.0.46"
-bstr = "0.2.11"
-ordered-float = "1.0.2"
+chrono = "0.4"
+nom = "5.1"
+bstr = "0.2"
+ordered-float = "2.0"
 
-[[example]]
-name = "count_pages_by_content_model"
-path = "examples/count_pages_by_content_model.rs"
-
-[[example]]
-name = "redirects_by_namespace"
-path = "examples/redirects_by_namespace.rs"
-
-[[example]]
-name = "template_redirects"
-path = "examples/template_redirects.rs"
+[dev-dependencies]
+memmap = "0.7"
+serde_json = "1.0"
