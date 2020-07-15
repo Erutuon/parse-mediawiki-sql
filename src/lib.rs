@@ -1,3 +1,73 @@
+/*!
+`parse_mediawiki_sql` parses SQL dumps of a MediaWiki database.
+The SQL dumps are scripts that create a database table and insert rows into it.
+The entry point is `iterate_sql_insertions`, which creates an iterable struct
+from a byte slice (`&[u8]`). The struct is generic over the type returned by the iterator,
+and this type must be one of the structs in the [`schemas`](schemas) module,
+which represent rows in the database, such as [`Page`](schemas::Page).
+
+## Usage
+This crate is available from [crates.io](https://crates.io/crate/parse-mediawiki-sql) and can be
+used by adding `parse-mediawiki-sql` to your dependencies in your project's `Cargo.toml`.
+
+```toml
+[dependencies]
+parse-mediawiki-sql = "0.1"
+```
+
+If you're using Rust 2015, then you’ll also need to add it to your crate root:
+
+```rust
+extern crate parse_mediawiki_sql;
+```
+
+## Example
+To generate a `Vec` containing the titles of all redirect pages:
+
+```no_run
+use memmap::Mmap;
+use parse_mediawiki_sql::{
+    iterate_sql_insertions,
+    schemas::Page,
+    types::{PageNamespace, PageTitle},
+};
+use std::fs::File;
+let page_sql =
+    unsafe { Mmap::map(&File::open("page.sql").unwrap()).unwrap() };
+let redirects: Vec<(PageNamespace, PageTitle)> =
+    iterate_sql_insertions(&page_sql)
+        .filter_map(
+            |Page { namespace, title, is_redirect, .. }| {
+                if is_redirect {
+                    Some((namespace, title))
+                } else {
+                    None
+                }
+            },
+        )
+        .collect();
+```
+
+Only a mutable reference to the struct is iterable, so a `for`-loop
+must use `&mut` or `.into_iter()` to iterate over the struct:
+
+```no_run
+# use parse_mediawiki_sql::{
+#     iterate_sql_insertions,
+#     schemas::Page,
+# };
+# use memmap::Mmap;
+# use std::fs::File;
+# let page_sql =
+#     unsafe { Mmap::map(&File::open("page.sql").unwrap()).unwrap() };
+for Page { namespace, title, is_redirect, .. } in &mut iterate_sql_insertions(&page_sql) {
+    if is_redirect {
+        dbg!((namespace, title));
+    }
+}
+```
+*/
+
 use crate::types::FromSql;
 use bstr::{ByteSlice, B};
 use nom::{
@@ -13,7 +83,7 @@ use nom::{
 pub mod schemas;
 pub mod types;
 
-/// Returns an iterator over the values represented in the SQL dump of
+/// Returns an iterator over the database rows represented in the SQL dump of
 /// a MediaWiki database.
 pub fn iterate_sql_insertions<'a, T>(
     sql: &'a [u8],

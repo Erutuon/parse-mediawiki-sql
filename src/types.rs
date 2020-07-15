@@ -1,11 +1,11 @@
 /*!
-Defines types that represent fields in tables of the
-[MediaWiki database](https://www.mediawiki.org/wiki/Manual:Database_layout),
-and the `FromSql` trait to convert them from SQL syntax.
+Defines the types used in the [`schemas`](crate::schemas) module
+and the [`FromSql`] trait, which allows them to be parsed from SQL syntax.
+Re-exports the [`Datelike`] and [`Timelike`] traits from the [`chrono`] crate,
+which are used by [`Timestamp`].
 */
 
 use bstr::B;
-use chrono::NaiveDateTime;
 use nom::{
     branch::alt,
     bytes::streaming::{escaped_transform, is_not, tag},
@@ -20,6 +20,15 @@ use std::{
     collections::BTreeMap,
     iter::FromIterator,
     ops::{Deref, Index},
+};
+
+/// The type that [`Timestamp`] derefs to, from `chrono`.
+pub use chrono::NaiveDateTime;
+
+/// Trait for [`Timestamp`], re-exported from `chrono`.
+pub use chrono::{
+    Datelike,
+    Timelike
 };
 
 /// Trait containing a function that infallibly converts from an SQL string
@@ -173,19 +182,8 @@ where
     }
 }
 
-/*
-impl_wrapper! {
-    #[doc = "
-Represents a SHA-1 hash in base 36, for instance in the
-[`img_sha1`](https://www.mediawiki.org/wiki/Manual:Image_table#img_sha1)
-field of the `image` table.
-"]
-    Sha1<'a>: &'a str
-}
-*/
 macro_rules! impl_wrapper {
     // $l1 and $l2 must be identical.
-    // (#[$comment:meta] $wrapper:ident<$l:lifetime>: $wrapped:ty) => {
     ($(#[$attrib:meta])* $wrapper:ident<$l1:lifetime>: &$l2:lifetime $wrapped_type:ty) => {
         $(#[$attrib])*
         #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -455,8 +453,8 @@ field of the `user_groups` table.
 
 /// Represents a [timestamp](https://www.mediawiki.org/wiki/Manual:Timestamp)
 /// given as a string in `yyyymmddhhmmss` format. Provides the methods of
-/// [`NaiveDateTime`](../../chrono/naive/struct.NaiveDateTime.html) through
-/// `Deref`.
+/// [`NaiveDateTime`] through
+/// [`Deref`].
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Timestamp(NaiveDateTime);
 
@@ -604,10 +602,11 @@ Represents [`page_restrictions`](https://www.mediawiki.org/wiki/Manual:Page_tabl
 an outdated field of the `page` table containing a string representing
 a map from action to the groups that are allowed to perform that action.
 
-Here the action is represented by [`PageAction`](enum.PageAction.html)
-and the protection level by [`ProtectionLevel`](enum.ProtectionLevel.html).
-This field was replaced by the [`page_restrictions`] table in MediaWiki
-1.10, but is still used by the software if a page's restrictions have not
+Here the action is represented by [`PageAction`]
+and the protection level by [`ProtectionLevel`].
+This field was replaced by the
+[`page_restrictions` table](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table)
+in MediaWiki 1.10, but is still used by the software if a page's restrictions have not
 been changed since MediaWiki 1.10 came out.
 
 The string is in the following format, at least on the English Wiktionary:
