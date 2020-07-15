@@ -184,7 +184,10 @@ where
 
 macro_rules! impl_wrapper {
     // $l1 and $l2 must be identical.
-    ($(#[$attrib:meta])* $wrapper:ident<$l1:lifetime>: &$l2:lifetime $wrapped_type:ty) => {
+    (
+        $(#[$attrib:meta])*
+        $wrapper:ident<$l1:lifetime>: &$l2:lifetime $wrapped_type:ty
+    ) => {
         $(#[$attrib])*
         #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $wrapper<$l1>(&$l2 $wrapped_type);
@@ -214,77 +217,96 @@ macro_rules! impl_wrapper {
             }
         }
     };
-    ($(#[$attrib:meta])* $wrapper:ident: $wrapped:ty) => {
-        impl_wrapper! { @maybe_copy $wrapped [$wrapped] }
-        $(#[$attrib])*
+    (
+        $(#[$attrib:meta])*
+        $wrapper:ident: $wrapped:ident
+    ) => {
+        impl_wrapper! {
+            @maybe_copy $wrapped [$wrapped]
+            $(#[$attrib])*
+            pub struct $wrapper($wrapped);
+
+            impl<'input> FromSql<'input> for $wrapper {
+                fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
+                    map(<$wrapped>::from_sql, $wrapper)(s)
+                }
+            }
+
+            #[allow(unused)]
+            impl $wrapper {
+                pub fn into_inner(self) -> $wrapped {
+                    self.into()
+                }
+            }
+
+            impl From<$wrapper> for $wrapped {
+                fn from(val: $wrapper) -> Self {
+                    val.0
+                }
+            }
+
+            impl<'a> From<&'a $wrapper> for &'a $wrapped {
+                fn from(val: &'a $wrapper) -> Self {
+                    &val.0
+                }
+            }
+
+            impl From<$wrapped> for $wrapper {
+                fn from(val: $wrapped) -> Self {
+                    Self(val)
+                }
+            }
+        }
+    };
+    (
+        $(#[$attrib:meta])*
+        $wrapper:ident<$l:lifetime>: $wrapped:ident
+    ) => {
+        impl_wrapper! {
+            @maybe_copy $wrapped [$wrapped]
+            $(#[$attrib])*
+            pub struct $wrapper<$l>($wrapped);
+
+            #[allow(unused)]
+            impl<$l> $wrapper<$l> {
+                pub fn into_inner(self) -> $wrapped {
+                    self.into()
+                }
+            }
+
+            impl<$l> FromSql<$l> for $wrapper<$l> {
+                fn from_sql(s: &$l [u8]) -> IResult<&$l [u8], Self> {
+                    map(<$wrapped>::from_sql, $wrapper)(s)
+                }
+            }
+
+            impl<$l, 'a: $l> From<&'a $wrapper<$l>> for &'a $wrapped {
+                fn from(val: &'a $wrapper) -> Self {
+                    &val.0
+                }
+            }
+
+            impl<$l> From<$wrapper<$l>> for $wrapped {
+                fn from(val: $wrapper<$l>) -> Self {
+                    val.0
+                }
+            }
+        }
+    };
+    (
+        @maybe_copy $wrapped:ident [$(u32)? $(i32)? $(&$l:lifetime $t:ty)?]
+        $($rest:item)+
+    ) => {
+        #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+        $($rest)+
+    };
+    (
+        @maybe_copy $wrapped:ty [$($anything:tt)?]
+        $($rest:item)+
+    ) => {
         #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-        pub struct $wrapper($wrapped);
-
-        impl<'input> FromSql<'input> for $wrapper {
-            fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
-                map(<$wrapped>::from_sql, $wrapper)(s)
-            }
-        }
-
-        #[allow(unused)]
-        impl $wrapper {
-            pub fn into_inner(self) -> $wrapped {
-                self.into()
-            }
-        }
-
-        impl From<$wrapper> for $wrapped {
-            fn from(val: $wrapper) -> Self {
-                val.0
-            }
-        }
-
-        impl<'a> From<&'a $wrapper> for &'a $wrapped {
-            fn from(val: &'a $wrapper) -> Self {
-                &val.0
-            }
-        }
-
-        impl From<$wrapped> for $wrapper {
-            fn from(val: $wrapped) -> Self {
-                Self(val)
-            }
-        }
+        $($rest)+
     };
-    (#[$attrib:meta] $wrapper:ident<$l:lifetime>: $wrapped:ty) => {
-        #[$attrib]
-        #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-        pub struct $wrapper<$l>($wrapped);
-
-        #[allow(unused)]
-        impl<$l> $wrapper<$l> {
-            pub fn into_inner(self) -> $wrapped {
-                self.into()
-            }
-        }
-
-        impl<$l> FromSql<$l> for $wrapper<$l> {
-            fn from_sql(s: &$l [u8]) -> IResult<&$l [u8], Self> {
-                map(<$wrapped>::from_sql, $wrapper)(s)
-            }
-        }
-
-        impl<$l, 'a: $l> From<&'a $wrapper<$l>> for &'a $wrapped {
-            fn from(val: &'a $wrapper) -> Self {
-                &val.0
-            }
-        }
-
-        impl<$l> From<$wrapper<$l>> for $wrapped {
-            fn from(val: $wrapper<$l>) -> Self {
-                val.0
-            }
-        }
-    };
-    (@maybe_copy $wrapped:ident [$(u32)? $(i32)? $(&$l:lifetime $t:ty)?]) => {
-        #[derive(Copy)]
-    };
-    (@maybe_copy $wrapped:ty [$($anything:tt)?]) => {};
 }
 
 impl_wrapper! {
