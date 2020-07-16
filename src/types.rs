@@ -440,6 +440,15 @@ field of the `user_groups` table.
     UserGroup<'a>: &'a str
 }
 
+#[test]
+fn test_copy_for_wrappers() {
+    use static_assertions::*;
+    assert_impl_all!(PageId: Copy);
+    assert_not_impl_all!(PageTitle: Copy);
+    assert_impl_all!(PageNamespace: Copy);
+    assert_impl_all!(UserGroup: Copy);
+}
+
 /// Represents a [timestamp](https://www.mediawiki.org/wiki/Manual:Timestamp)
 /// given as a string in `yyyymmddhhmmss` format. Provides the methods of
 /// [`NaiveDateTime`] through
