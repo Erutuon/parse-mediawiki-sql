@@ -1,13 +1,12 @@
 use bstr::ByteSlice;
 use memmap::Mmap;
-use std::collections::BTreeMap as Map;
-use std::fs::File;
-
 use parse_mediawiki_sql::{
     iterate_sql_insertions,
     schemas::{Page, Redirect},
     types::PageNamespace,
 };
+use std::collections::BTreeMap as Map;
+use std::fs::File;
 
 unsafe fn memory_map(path: &str) -> Mmap {
     Mmap::map(

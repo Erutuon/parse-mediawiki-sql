@@ -7,7 +7,6 @@ use nom::{
     character::streaming::char,
     combinator::{cut, map, opt},
     sequence::{preceded, terminated, tuple},
-    IResult,
 };
 
 use ordered_float::NotNan;
@@ -18,7 +17,7 @@ use crate::types::{
     MediaType, MinorMime, PageAction, PageId, PageNamespace,
     PageRestrictionsId, PageRestrictionsOld, PageTitle, PageType,
     ProtectionLevel, RecentChangesId, RevisionId, Sha1, Timestamp, UserGroup,
-    UserId,
+    UserId, IResult,
 };
 
 macro_rules! impl_from_sql {
@@ -43,7 +42,7 @@ macro_rules! impl_from_sql {
             }
 
             impl<'input> FromSql<'input> for $output_type {
-                fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
+                fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
                     let fields = cut(
                         map(
                             tuple((
@@ -87,7 +86,7 @@ macro_rules! impl_from_sql {
             }
 
             impl<$life> FromSql<$life> for $output_type<$life> {
-                fn from_sql(s: &$life [u8]) -> IResult<&$life [u8], Self> {
+                fn from_sql(s: &$life [u8]) -> IResult<$life, Self> {
                     let fields = cut(
                         map(
                             tuple((

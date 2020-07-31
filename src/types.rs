@@ -5,7 +5,7 @@ Re-exports the [`Datelike`] and [`Timelike`] traits from the [`chrono`] crate,
 which are used by [`Timestamp`].
 */
 
-use bstr::B;
+use bstr::{BStr, B};
 use nom::{
     branch::alt,
     bytes::streaming::{escaped_transform, is_not, tag},
@@ -13,7 +13,7 @@ use nom::{
     combinator::{map, opt, recognize},
     number::streaming::recognize_float,
     sequence::{preceded, terminated, tuple},
-    IResult,
+    error::{ParseError, ErrorKind},
 };
 use ordered_float::NotNan;
 use std::{
@@ -26,19 +26,49 @@ use std::{
 pub use chrono::NaiveDateTime;
 
 /// Trait for [`Timestamp`], re-exported from `chrono`.
-pub use chrono::{
-    Datelike,
-    Timelike
-};
+pub use chrono::{Datelike, Timelike};
+
+pub type IResult<'a, T> = nom::IResult<&'a [u8], T, Error<'a>>;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Error<'a> {
+    ErrorKind {
+        input: &'a BStr,
+        kind: ErrorKind,
+    },
+    Multiple(Vec<Error<'a>>),
+}
+
+impl<'a> ParseError<&'a [u8]> for Error<'a> {
+    fn from_error_kind(input: &'a [u8], kind: nom::error::ErrorKind) -> Self {
+        Self::ErrorKind {
+            input: input.into(), kind
+        }
+    }
+
+    fn append(input: &'a [u8], kind: nom::error::ErrorKind, other: Self) -> Self {
+        let new = Self::from_error_kind(input.into(), kind);
+        match other {
+            e @ Error::ErrorKind { .. } => {
+                Error::Multiple(vec![new, e])
+            }
+            Error::Multiple(mut inner) => {
+                inner.insert(0, new);
+                Error::Multiple(inner)
+            }
+        }
+    }
+
+}
 
 /// Trait containing a function that infallibly converts from an SQL string
 /// to a Rust type, which can borrow from the string or not.
 pub trait FromSql<'a>: Sized {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self>;
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self>;
 }
 
 impl<'a> FromSql<'a> for bool {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(one_of("01"), |b| b == '1')(s)
     }
 }
@@ -48,7 +78,7 @@ impl<'a> FromSql<'a> for bool {
 macro_rules! number_impl {
     ($type_name:ty $implementation:block ) => {
         impl<'a> FromSql<'a> for $type_name {
-            fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], $type_name> {
+            fn from_sql(s: &'a [u8]) -> IResult<'a, $type_name> {
                 map($implementation, |num: &[u8]| {
                     std::str::from_utf8(num)
                         .expect(concat!(
@@ -63,7 +93,7 @@ macro_rules! number_impl {
     };
     ($type_name:ty $implementation:block $further_processing:block ) => {
         impl<'a> FromSql<'a> for $type_name {
-            fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], $type_name> {
+            fn from_sql(s: &'a [u8]) -> IResult<'a, $type_name> {
                 map($implementation, $further_processing)(s)
             }
         }
@@ -111,7 +141,7 @@ float!(f64);
 /// Use this for string-like types that have no escape sequences,
 /// like timestamps, which only contain `[0-9: -]`.
 impl<'a> FromSql<'a> for &'a str {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(
             preceded(
                 tag(B("'")),
@@ -133,7 +163,7 @@ impl<'a> FromSql<'a> for &'a str {
 /// Use this for string types that require unescaping and are guaranteed
 /// to be valid UTF-8, like page titles.
 impl<'a> FromSql<'a> for String {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(<Vec<u8>>::from_sql, |s| {
             String::from_utf8(s)
                 .expect("valid UTF-8 in potentially escaped string")
@@ -145,7 +175,7 @@ impl<'a> FromSql<'a> for String {
 /// `cl_sortkey` field in the `categorylinks` table, which is truncated to 230
 // bits, sometimes in the middle of a UTF-8 sequence.
 impl<'a> FromSql<'a> for Vec<u8> {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         preceded(
             tag(B("'")),
             terminated(
@@ -177,7 +207,7 @@ impl<'a, T> FromSql<'a> for Option<T>
 where
     T: FromSql<'a>,
 {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         alt((map(T::from_sql, Some), map(tag("NULL"), |_| None)))(s)
     }
 }
@@ -194,7 +224,7 @@ macro_rules! impl_wrapper {
             pub struct $wrapper<$l1>(&$l2 $wrapped_type);
 
             impl<$l1> FromSql<$l1> for $wrapper<$l1> {
-                fn from_sql(s: &$l1 [u8]) -> IResult<&$l1 [u8], Self> {
+                fn from_sql(s: &$l1 [u8]) -> IResult<$l1, Self> {
                     map(<&$l2 $wrapped_type>::from_sql, $wrapper)(s)
                 }
             }
@@ -229,7 +259,7 @@ macro_rules! impl_wrapper {
             pub struct $wrapper($wrapped);
 
             impl<'input> FromSql<'input> for $wrapper {
-                fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
+                fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
                     map(<$wrapped>::from_sql, $wrapper)(s)
                 }
             }
@@ -457,7 +487,7 @@ fn test_copy_for_wrappers() {
 pub struct Timestamp(NaiveDateTime);
 
 impl<'input> FromSql<'input> for Timestamp {
-    fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
+    fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
         map(<&str>::from_sql, |s| {
             Timestamp(
                 if s.len() == 14 {
@@ -489,7 +519,7 @@ pub enum Expiry {
 }
 
 impl<'input> FromSql<'input> for Expiry {
-    fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
+    fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
         alt((
             map(Timestamp::from_sql, Expiry::Timestamp),
             map(tag("infinity"), |_| Expiry::Infinity),
@@ -521,7 +551,7 @@ impl<'a> From<&'a str> for PageType<'a> {
 }
 
 impl<'a> FromSql<'a> for PageType<'a> {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(<&str>::from_sql, PageType::from)(s)
     }
 }
@@ -551,7 +581,7 @@ impl<'a> From<&'a str> for PageAction<'a> {
 }
 
 impl<'a> FromSql<'a> for PageAction<'a> {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(<&str>::from_sql, PageAction::from)(s)
     }
 }
@@ -590,7 +620,7 @@ impl<'a> From<&'a str> for ProtectionLevel<'a> {
 }
 
 impl<'a> FromSql<'a> for ProtectionLevel<'a> {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(<&str>::from_sql, ProtectionLevel::from)(s)
     }
 }
@@ -671,7 +701,7 @@ impl<'a> FromIterator<(PageAction<'a>, Vec<ProtectionLevel<'a>>)>
 }
 
 impl<'a> FromSql<'a> for PageRestrictionsOld<'a> {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(<&str>::from_sql, |contents| {
             PageRestrictionsOld(
                 contents
@@ -761,7 +791,7 @@ impl<'a> From<&'a str> for ContentModel<'a> {
 }
 
 impl<'a> FromSql<'a> for ContentModel<'a> {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(<&str>::from_sql, ContentModel::from)(s)
     }
 }
@@ -807,7 +837,7 @@ impl<'a> From<&'a str> for MediaType<'a> {
 }
 
 impl<'a> FromSql<'a> for MediaType<'a> {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(<&str>::from_sql, MediaType::from)(s)
     }
 }
@@ -848,7 +878,7 @@ impl<'a> From<&'a str> for MajorMime<'a> {
 }
 
 impl<'a> FromSql<'a> for MajorMime<'a> {
-    fn from_sql(s: &'a [u8]) -> IResult<&'a [u8], Self> {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(<&str>::from_sql, MajorMime::from)(s)
     }
 }

@@ -97,22 +97,12 @@ fn main() {
             map
         });
 
-    match category_links.finish() {
-        Ok((remaining_input, _)) => {
-            dbg!(remaining_input.chars().take(1000).collect::<String>());
-        }
-        Err(e) => {
-            use nom::Err;
-            match e {
-                Err::Failure((t, e)) | Err::Error((t, e)) => {
-                    dbg!(t.chars().take(1000).collect::<String>(), e);
-                }
-                _ => {
-                    eprintln!("other error");
-                }
-            }
-        }
-    };
+    assert_eq!(
+        category_links
+            .finish()
+            .map(|(input, _)| input.chars().take(4).collect::<String>()),
+        Ok(";\n/*".into())
+    );
     let page_to_categories = pages.fold(
         Map::new(),
         |mut map,

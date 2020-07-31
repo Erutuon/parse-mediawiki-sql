@@ -75,10 +75,9 @@ use nom::{
     bytes::streaming::{tag, take_while},
     character::streaming::multispace0,
     combinator::{iterator, opt, recognize, ParserIterator},
-    error::ErrorKind,
     sequence::{preceded, tuple},
-    IResult,
 };
+use types::{Error, IResult};
 
 pub mod schemas;
 pub mod types;
@@ -90,8 +89,8 @@ pub fn iterate_sql_insertions<'a, T>(
     sql: &'a [u8],
 ) -> ParserIterator<
     &'a [u8],
-    (&'a [u8], ErrorKind),
-    impl Fn(&'a [u8]) -> IResult<&'a [u8], T, (&'a [u8], ErrorKind)>,
+    Error<'a>,
+    impl Fn(&'a [u8]) -> IResult<'a, T>,
 >
 where
     T: FromSql<'a> + 'a,
