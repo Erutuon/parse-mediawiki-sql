@@ -1,6 +1,6 @@
 [package]
 name = "parse-mediawiki-sql"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Erutuon <5840197+Erutuon@users.noreply.github.com>"]
 license = "MIT"
 description = "A parser for SQL dumps of a MediaWiki database"
