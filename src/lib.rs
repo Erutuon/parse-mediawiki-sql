@@ -17,7 +17,7 @@ parse-mediawiki-sql = "0.1"
 
 If you're using Rust 2015, then you’ll also need to add it to your crate root:
 
-```rust
+```no_run
 extern crate parse_mediawiki_sql;
 ```
 
@@ -83,8 +83,9 @@ use nom::{
 pub mod schemas;
 pub mod types;
 
-/// Returns an iterator over the database rows represented in the SQL dump of
-/// a MediaWiki database.
+/// Takes a SQL dump of a MediaWiki database table as bytes
+/// and yields a struct that is iterable as a mutable reference,
+/// yielding structs representing the database rows.
 pub fn iterate_sql_insertions<'a, T>(
     sql: &'a [u8],
 ) -> ParserIterator<

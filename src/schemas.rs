@@ -25,25 +25,47 @@ macro_rules! impl_from_sql {
     (
         $table_name:ident
         $output_type:ident {
-            $($(#[$field_meta:meta])* $field_names:ident: $type_names:ty,)+
+            $(
+                $(#[$field_meta:meta])*
+                $field_names:ident: $type_names:ty
+            ),+
+            $(,)?
         }
     ) => {
         impl_from_sql! {
-            @with_doc $table_name
+            @database_table_doc($table_name)
             #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub struct $output_type {
-                $($(#[$field_meta])* pub $field_names: $type_names),+
+                $(
+                    $(#[$field_meta])*
+                    pub $field_names: $type_names,
+                )+
             }
 
             impl<'input> FromSql<'input> for $output_type {
                 fn from_sql(s: &'input [u8]) -> IResult<&'input [u8], Self> {
+                    let fields = cut(
+                        map(
+                            tuple((
+                                $(
+                                    terminated(
+                                        <$type_names>::from_sql,
+                                        opt(char(','))
+                                    ),
+                                )+
+                            )),
+                            |($($field_names),+)| $output_type {
+                                $($field_names,)+
+                            }
+                        )
+                    );
                     preceded(
                         char('('),
                         terminated(
-                            map(
-                                tuple(( $( terminated(<$type_names>::from_sql, opt(char(','))) ),+ )),
-                                |($($field_names),+)| $output_type { $($field_names),+ }),
-                            char(')')))(s)
+                            fields,
+                            char(')')
+                        )
+                    )(s)
                 }
             }
         }
@@ -51,11 +73,14 @@ macro_rules! impl_from_sql {
     (
         $table_name:ident
         $output_type:ident<$life:lifetime> {
-            $($(#[$field_meta:meta])* $field_names:ident: $type_names:ty,)+
+            $(
+                $(#[$field_meta:meta])*
+                $field_names:ident: $type_names:ty,
+            )+
         }
     ) => {
         impl_from_sql! {
-            @with_doc $table_name
+            @database_table_doc($table_name)
             #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub struct $output_type<$life> {
                 $($(#[$field_meta])* pub $field_names: $type_names),+
@@ -63,20 +88,36 @@ macro_rules! impl_from_sql {
 
             impl<$life> FromSql<$life> for $output_type<$life> {
                 fn from_sql(s: &$life [u8]) -> IResult<&$life [u8], Self> {
+                    let fields = cut(
+                        map(
+                            tuple((
+                                $(
+                                    terminated(
+                                        <$type_names>::from_sql,
+                                        opt(char(','))
+                                    ),
+                                )+
+                            )),
+                            |($($field_names),+)| $output_type {
+                                $($field_names,)+
+                            }
+                        ),
+                    );
                     preceded(
                         char('('),
                         terminated(
-                            cut(
-                                map(
-                                    tuple(( $( terminated(<$type_names>::from_sql, opt(char(','))) ),+ )),
-                                    |($($field_names),+)| $output_type { $($field_names),+ }),
-                                ),
-                            char(')')))(s)
+                            fields,
+                            char(')')
+                        )
+                    )(s)
                 }
             }
         }
     };
-    (@with_doc $table_name:ident $($metas:meta)* $($items:item)+) => {
+    (
+        @database_table_doc($table_name:ident)
+        $($items:item)+
+    ) => {
         impl_from_sql! {
             @with_doc_comment
             #[doc = concat!(
@@ -84,15 +125,13 @@ macro_rules! impl_from_sql {
                 stringify!($table_name),
                 "` table](https://www.mediawiki.org/wiki/Manual:",
                 stringify!($table_name),
-                "_table)."
+                "_table).",
             )]
-            $($metas)*
             $($items)+
         }
     };
     (@with_doc_comment #[doc = $comment:expr] $($metas:meta)* $($items:item)+) => {
         #[doc = $comment]
-        $($metas)*
         $($items)+
     };
 }
