@@ -12,7 +12,7 @@ used by adding `parse-mediawiki-sql` to your dependencies in your project's `Car
 
 ```toml
 [dependencies]
-parse-mediawiki-sql = "0.1"
+parse-mediawiki-sql = "0.3"
 ```
 
 If you're using Rust 2015, then you’ll also need to add it to your crate root:
