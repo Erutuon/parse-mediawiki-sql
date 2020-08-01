@@ -1,68 +1,84 @@
 /*!
 Defines types that represent rows in tables of the
-[MediaWiki database](https://www.mediawiki.org/wiki/Manual:Database_layout).
+[MediaWiki database](https://www.mediawiki.org/wiki/Manual:Database_layout)
+and implements the [`FromSqlTuple`] trait for them,
+so that they can be parsed from SQL tuples.
 */
 
 use nom::{
     character::streaming::char,
     combinator::{cut, map, opt},
+    error::context,
     sequence::{preceded, terminated, tuple},
 };
 
 use ordered_float::NotNan;
 
-use crate::types::{
-    ActorId, CategoryId, ChangeTagDefId, ChangeTagId, CommentId, ContentModel,
-    Expiry, ExternalLinksId, FromSql, FullPageTitle, LogId, MajorMime,
-    MediaType, MinorMime, PageAction, PageId, PageNamespace,
-    PageRestrictionsId, PageRestrictionsOld, PageTitle, PageType,
-    ProtectionLevel, RecentChangesId, RevisionId, Sha1, Timestamp, UserGroup,
-    UserId, IResult,
+use crate::{
+    types::{
+        ActorId, CategoryId, ChangeTagDefId, ChangeTagId, CommentId,
+        ContentModel, Expiry, ExternalLinksId, FromSql, FullPageTitle, IResult,
+        LogId, MajorMime, MediaType, MinorMime, PageAction, PageId,
+        PageNamespace, PageRestrictionsId, PageRestrictionsOld, PageTitle,
+        PageType, ProtectionLevel, RecentChangesId, RevisionId, Sha1,
+        Timestamp, UserGroup, UserId,
+    },
+    FromSqlTuple,
 };
 
-macro_rules! impl_from_sql {
+macro_rules! impl_row_from_sql {
     (
         $table_name:ident
         $output_type:ident {
             $(
                 $(#[$field_meta:meta])*
-                $field_names:ident: $type_names:ty
+                $field_name:ident: $type_name:ty
             ),+
             $(,)?
         }
     ) => {
-        impl_from_sql! {
+        impl_row_from_sql! {
             @database_table_doc($table_name)
             #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub struct $output_type {
                 $(
                     $(#[$field_meta])*
-                    pub $field_names: $type_names,
+                    pub $field_name: $type_name,
                 )+
             }
 
-            impl<'input> FromSql<'input> for $output_type {
-                fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
+            impl<'input> FromSqlTuple<'input> for $output_type {
+                fn from_sql_tuple(s: &'input [u8]) -> IResult<'input, Self> {
                     let fields = cut(
                         map(
                             tuple((
                                 $(
                                     terminated(
-                                        <$type_names>::from_sql,
+                                        context(
+                                            concat!(
+                                                "the field “",
+                                                stringify!($field_name),
+                                                "”"
+                                            ),
+                                            <$type_name>::from_sql,
+                                        ),
                                         opt(char(','))
                                     ),
                                 )+
                             )),
-                            |($($field_names),+)| $output_type {
-                                $($field_names,)+
+                            |($($field_name),+)| $output_type {
+                                $($field_name,)+
                             }
                         )
                     );
-                    preceded(
-                        char('('),
-                        terminated(
-                            fields,
-                            char(')')
+                    context(
+                        concat!("row of ", stringify!($table_name), " table"),
+                            preceded(
+                            char('('),
+                            terminated(
+                                fields,
+                                char(')')
+                            )
                         )
                     )(s)
                 }
@@ -74,39 +90,49 @@ macro_rules! impl_from_sql {
         $output_type:ident<$life:lifetime> {
             $(
                 $(#[$field_meta:meta])*
-                $field_names:ident: $type_names:ty,
+                $field_name:ident: $type_name:ty,
             )+
         }
     ) => {
-        impl_from_sql! {
+        impl_row_from_sql! {
             @database_table_doc($table_name)
             #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub struct $output_type<$life> {
-                $($(#[$field_meta])* pub $field_names: $type_names),+
+                $($(#[$field_meta])* pub $field_name: $type_name),+
             }
 
-            impl<$life> FromSql<$life> for $output_type<$life> {
-                fn from_sql(s: &$life [u8]) -> IResult<$life, Self> {
+            impl<$life> FromSqlTuple<$life> for $output_type<$life> {
+                fn from_sql_tuple(s: &$life [u8]) -> IResult<$life, Self> {
                     let fields = cut(
                         map(
                             tuple((
                                 $(
                                     terminated(
-                                        <$type_names>::from_sql,
+                                        context(
+                                            concat!(
+                                                "the field “",
+                                                stringify!($field_name),
+                                                "”"
+                                            ),
+                                            <$type_name>::from_sql,
+                                        ),
                                         opt(char(','))
                                     ),
                                 )+
                             )),
-                            |($($field_names),+)| $output_type {
-                                $($field_names,)+
+                            |($($field_name),+)| $output_type {
+                                $($field_name,)+
                             }
                         ),
                     );
-                    preceded(
-                        char('('),
-                        terminated(
-                            fields,
-                            char(')')
+                    context(
+                        concat!("row in ", stringify!($table_name), " table"),
+                        preceded(
+                            char('('),
+                            terminated(
+                                fields,
+                                char(')')
+                            )
                         )
                     )(s)
                 }
@@ -117,7 +143,7 @@ macro_rules! impl_from_sql {
         @database_table_doc($table_name:ident)
         $($items:item)+
     ) => {
-        impl_from_sql! {
+        impl_row_from_sql! {
             @with_doc_comment
             #[doc = concat!(
                 "Represents the [`",
@@ -135,7 +161,7 @@ macro_rules! impl_from_sql {
     };
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     category
     Category {
         id: CategoryId,
@@ -146,7 +172,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     categorylinks
     CategoryLinks<'input> {
         id: PageId,
@@ -165,7 +191,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     change_tag_def
     ChangeTagDef {
         id: ChangeTagDefId,
@@ -175,7 +201,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     change_tag
     ChangeTag {
         id: ChangeTagId,
@@ -187,7 +213,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     externallinks
     ExternalLinks {
         id: ExternalLinksId,
@@ -198,7 +224,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     image
     Image<'input> {
         name: PageTitle,
@@ -221,7 +247,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     imagelinks
     ImageLinks {
         from: PageId,
@@ -230,7 +256,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     iwlinks
     InterwikiLinks<'input> {
         from: PageId,
@@ -239,7 +265,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     langlinks
     LangLinks<'input> {
         from: PageId,
@@ -248,7 +274,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     page_restrictions
     PageRestrictions<'input> {
         page: PageId,
@@ -261,7 +287,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     page
     Page<'input> {
         id: PageId,
@@ -280,7 +306,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     pagelinks
     PageLinks {
         from: PageId,
@@ -290,7 +316,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     protected_titles
     ProtectedTitles<'input> {
         namespace: PageNamespace,
@@ -303,7 +329,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     redirect
     Redirect<'input> {
         from: PageId,
@@ -319,7 +345,7 @@ fn test_redirect() {
     use bstr::B;
     let item = r"(605368,1,'разблюто','','Discussion from Stephen G. Brown\'s talk-page')";
     assert_eq!(
-        Redirect::from_sql(item.as_bytes()),
+        Redirect::from_sql_tuple(item.as_bytes()),
         Ok((
             B(""),
             Redirect {
@@ -335,7 +361,7 @@ fn test_redirect() {
     );
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     templatelinks
     TemplateLinks {
         from: PageId,
@@ -345,7 +371,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     user_former_groups
     UserFormerGroups<'input> {
         user: UserId,
@@ -353,7 +379,7 @@ impl_from_sql! {
     }
 }
 
-impl_from_sql! {
+impl_row_from_sql! {
     user_groups
     UserGroups<'input> {
         user: UserId,

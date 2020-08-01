@@ -13,9 +13,10 @@ edition = "2018"
 name = "parse_mediawiki_sql"
 
 [dependencies]
-chrono = { version = "0.4", default-features = false, features = ["std"] }
-nom = "5.1"
 bstr = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+joinery = "2.0.0"
+nom = "5.1"
 ordered-float = "2.0"
 
 [dev-dependencies]

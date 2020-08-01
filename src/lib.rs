@@ -68,7 +68,6 @@ for Page { namespace, title, is_redirect, .. } in &mut iterate_sql_insertions(&p
 ```
 */
 
-use crate::types::FromSql;
 use bstr::{ByteSlice, B};
 use nom::{
     branch::alt,
@@ -77,23 +76,30 @@ use nom::{
     combinator::{iterator, opt, recognize, ParserIterator},
     sequence::{preceded, tuple},
 };
-use types::{Error, IResult};
+pub use types::{Error, IResult};
 
 pub mod schemas;
 pub mod types;
 
-/// Takes a SQL dump of a MediaWiki database table as bytes
-/// and yields a struct that is iterable as a mutable reference,
-/// yielding structs representing the database rows.
+/**
+Trait for converting from a SQL tuple to a Rust type,
+which can borrow from the string or not.
+Used by [`iterate_sql_insertions`][crate::iterate_sql_insertions].
+*/
+pub trait FromSqlTuple<'a>: Sized {
+    fn from_sql_tuple(s: &'a [u8]) -> IResult<'a, Self>;
+}
+
+/**
+Takes a SQL dump of a MediaWiki database table as bytes
+and yields a struct that is iterable as a mutable reference,
+yielding structs representing the database rows.
+*/
 pub fn iterate_sql_insertions<'a, T>(
     sql: &'a [u8],
-) -> ParserIterator<
-    &'a [u8],
-    Error<'a>,
-    impl Fn(&'a [u8]) -> IResult<'a, T>,
->
+) -> ParserIterator<&'a [u8], Error<'a>, impl Fn(&'a [u8]) -> IResult<'a, T>>
 where
-    T: FromSql<'a> + 'a,
+    T: FromSqlTuple<'a> + 'a,
 {
     let sql = &sql[sql.find("INSERT INTO").expect("INSERT INTO statement")..];
     iterator(
@@ -112,7 +118,7 @@ where
                 ))),
                 tag(","),
             )),
-            FromSql::from_sql,
+            FromSqlTuple::from_sql_tuple,
         ),
     )
 }

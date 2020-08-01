@@ -1,23 +1,27 @@
 /*!
 Defines the types used in the [`schemas`](crate::schemas) module
-and the [`FromSql`] trait, which allows them to be parsed from SQL syntax.
+and implements the [`FromSql`] trait for these and other types,
+so that they can be parsed from SQL syntax.
 Re-exports the [`Datelike`] and [`Timelike`] traits from the [`chrono`] crate,
 which are used by [`Timestamp`].
 */
 
-use bstr::{BStr, B};
+use bstr::{BStr, ByteSlice, B};
+use joinery::prelude::*;
 use nom::{
     branch::alt,
     bytes::streaming::{escaped_transform, is_not, tag},
     character::streaming::{char, digit1, one_of},
-    combinator::{map, opt, recognize},
+    combinator::{map, map_res, opt, recognize},
+    error::{context, ErrorKind, ParseError},
+    multi::many1,
     number::streaming::recognize_float,
-    sequence::{preceded, terminated, tuple},
-    error::{ParseError, ErrorKind},
+    sequence::{delimited, pair, preceded, terminated, tuple},
 };
 use ordered_float::NotNan;
 use std::{
     collections::BTreeMap,
+    fmt::Display,
     iter::FromIterator,
     ops::{Deref, Index},
 };
@@ -30,46 +34,260 @@ pub use chrono::{Datelike, Timelike};
 
 pub type IResult<'a, T> = nom::IResult<&'a [u8], T, Error<'a>>;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Error<'a> {
-    ErrorKind {
-        input: &'a BStr,
-        kind: ErrorKind,
-    },
-    Multiple(Vec<Error<'a>>),
-}
-
-impl<'a> ParseError<&'a [u8]> for Error<'a> {
-    fn from_error_kind(input: &'a [u8], kind: nom::error::ErrorKind) -> Self {
-        Self::ErrorKind {
-            input: input.into(), kind
-        }
-    }
-
-    fn append(input: &'a [u8], kind: nom::error::ErrorKind, other: Self) -> Self {
-        let new = Self::from_error_kind(input.into(), kind);
-        match other {
-            e @ Error::ErrorKind { .. } => {
-                Error::Multiple(vec![new, e])
-            }
-            Error::Multiple(mut inner) => {
-                inner.insert(0, new);
-                Error::Multiple(inner)
-            }
-        }
-    }
-
-}
-
-/// Trait containing a function that infallibly converts from an SQL string
-/// to a Rust type, which can borrow from the string or not.
+/**
+Trait for converting from the SQL syntax for a simple type
+(anything other than a tuple) to a Rust type,
+which can borrow from the string or not.
+Used by [`schemas::FromSqlTuple`][crate::FromSqlTuple].
+*/
 pub trait FromSql<'a>: Sized {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self>;
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum ParseTypeContext<'a> {
+    Single {
+        input: &'a BStr,
+        label: &'static str,
+    },
+    Alternatives {
+        input: &'a BStr,
+        labels: Vec<&'static str>,
+    },
+}
+
+impl<'a> ParseTypeContext<'a> {
+    fn push(&mut self, other: Self) {
+        match self {
+            ParseTypeContext::Single { label: label1, .. } => match other {
+                ParseTypeContext::Single {
+                    input,
+                    label: label2,
+                } => {
+                    *self = ParseTypeContext::Alternatives {
+                        input,
+                        labels: vec![label1, label2],
+                    }
+                }
+                ParseTypeContext::Alternatives {
+                    input,
+                    labels: mut labels2,
+                } => {
+                    labels2.insert(0, label1);
+                    *self = ParseTypeContext::Alternatives {
+                        input,
+                        labels: labels2,
+                    }
+                }
+            },
+            ParseTypeContext::Alternatives {
+                labels: labels1, ..
+            } => match other {
+                ParseTypeContext::Single { label: label2, .. } => {
+                    labels1.push(label2);
+                }
+                ParseTypeContext::Alternatives {
+                    labels: labels2, ..
+                } => {
+                    labels1.extend(labels2);
+                }
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Error<'a> {
+    ErrorKind { input: &'a BStr, kind: ErrorKind },
+    ErrorWithContexts(Vec<ParseTypeContext<'a>>),
+}
+
+impl<'a> ParseError<&'a [u8]> for Error<'a> {
+    fn from_error_kind(input: &'a [u8], kind: ErrorKind) -> Self {
+        Self::ErrorKind {
+            input: input.into(),
+            kind,
+        }
+    }
+
+    // Bubble up ErrorWithContext and skip ErrorKind.
+    fn append(input: &'a [u8], kind: ErrorKind, other: Self) -> Self {
+        match other {
+            Self::ErrorKind { .. } => Self::from_error_kind(input, kind),
+            e @ Self::ErrorWithContexts(_) => e,
+        }
+    }
+
+    fn from_char(input: &'a [u8], _: char) -> Self {
+        Self::from_error_kind(input, ErrorKind::Char)
+    }
+
+    fn or(self, other: Self) -> Self {
+        match self {
+            Error::ErrorKind { .. } => match other {
+                Error::ErrorKind { input, kind } => {
+                    Self::from_error_kind(input, kind)
+                }
+                e @ Error::ErrorWithContexts(_) => e,
+            },
+            Error::ErrorWithContexts(mut contexts) => match other {
+                Error::ErrorKind { .. } => Error::ErrorWithContexts(contexts),
+                Error::ErrorWithContexts(mut other_contexts) => {
+                    if let (Some(mut old_context), Some(new_context)) =
+                        (contexts.pop(), other_contexts.pop())
+                    {
+                        old_context.push(new_context);
+                        other_contexts.push(old_context);
+                    };
+                    Error::ErrorWithContexts(other_contexts)
+                }
+            },
+        }
+    }
+
+    fn add_context(input: &'a [u8], label: &'static str, other: Self) -> Self {
+        let context = ParseTypeContext::Single {
+            input: input.into(),
+            label,
+        };
+        match other {
+            Self::ErrorKind { .. } => Self::ErrorWithContexts(vec![context]),
+            Self::ErrorWithContexts(mut contexts) => {
+                contexts.push(context);
+                Self::ErrorWithContexts(contexts)
+            }
+        }
+    }
+}
+
+const INPUT_GRAPHEMES_TO_SHOW: usize = 50;
+
+impl<'a> Display for Error<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn show_input(input: &BStr) -> &BStr {
+            // Try to display the whole SQL tuple.
+            if input.get(0) == Some(&b'(') {
+                let row = recognize(delimited(
+                    char('('),
+                    many1(pair(
+                        alt((
+                            tag("NULL"),
+                            recognize(f64::from_sql),
+                            recognize(i64::from_sql),
+                            recognize(<Vec<u8>>::from_sql),
+                        )),
+                        opt(char(',')),
+                    )),
+                    char(')'),
+                ))(input);
+
+                if let Ok((_, row)) = row {
+                    return row.into();
+                }
+            }
+            alt((
+                tag("NULL"),
+                recognize(f64::from_sql),
+                recognize(i64::from_sql),
+                recognize(<Vec<u8>>::from_sql),
+            ))(input)
+            .map(|(_, result)| result.into())
+            .unwrap_or_else(|_| {
+                input
+                    .grapheme_indices()
+                    .nth(INPUT_GRAPHEMES_TO_SHOW)
+                    .map(|(_, end, _)| &input[..end])
+                    .unwrap_or(input)
+            })
+        }
+
+        match self {
+            Error::ErrorKind { input, kind } => write!(
+                f,
+                "error in {} combinator at\n\t{}",
+                kind.description(),
+                show_input(input),
+            ),
+            Error::ErrorWithContexts(contexts) => {
+                match contexts.as_slice() {
+                    [] => {
+                        write!(f, "unknown error")?;
+                    }
+                    [first, rest @ ..] => {
+                        let mut last_input = match first {
+                            ParseTypeContext::Single { input, label } => {
+                                write!(
+                                    f,
+                                    "expected {} at\n\t{}\n",
+                                    label,
+                                    show_input(input),
+                                )?;
+                                input
+                            }
+                            ParseTypeContext::Alternatives {
+                                input,
+                                labels,
+                            } => {
+                                write!(
+                                    f,
+                                    "expected {} at \n\t{}\n",
+                                    labels.into_iter().join_with(" or "),
+                                    show_input(input),
+                                )?;
+                                input
+                            }
+                        };
+                        for context in rest {
+                            let labels_joined;
+                            let (displayed_label, input): (&dyn Display, _) =
+                                match context {
+                                    ParseTypeContext::Single {
+                                        input,
+                                        label,
+                                    } => {
+                                        let displayed_input =
+                                            if last_input == input {
+                                                None
+                                            } else {
+                                                Some(input)
+                                            };
+                                        last_input = input;
+                                        (label, displayed_input)
+                                    }
+                                    ParseTypeContext::Alternatives {
+                                        input,
+                                        labels,
+                                    } => {
+                                        let displayed_input =
+                                            if last_input == input {
+                                                None
+                                            } else {
+                                                Some(input)
+                                            };
+                                        labels_joined = labels
+                                            .into_iter()
+                                            .join_with(" or ");
+                                        last_input = input;
+                                        (&labels_joined, displayed_input)
+                                    }
+                                };
+                            write!(f, "while parsing {}", displayed_label,)?;
+                            if let Some(input) = input {
+                                write!(f, " at\n\t{}", show_input(input),)?;
+                            }
+                            write!(f, "\n")?;
+                        }
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 impl<'a> FromSql<'a> for bool {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        map(one_of("01"), |b| b == '1')(s)
+        context("1 or 0", map(one_of("01"), |b| b == '1'))(s)
     }
 }
 
@@ -79,22 +297,28 @@ macro_rules! number_impl {
     ($type_name:ty $implementation:block ) => {
         impl<'a> FromSql<'a> for $type_name {
             fn from_sql(s: &'a [u8]) -> IResult<'a, $type_name> {
-                map($implementation, |num: &[u8]| {
-                    std::str::from_utf8(num)
-                        .expect(concat!(
-                            "valid UTF-8 in ",
-                            stringify!($type_name)
-                        ))
-                        .parse()
-                        .expect(concat!("valid ", stringify!($type_name)))
-                })(s)
+                context(
+                    concat!("number (", stringify!($type_name), ")"),
+                    map($implementation, |num: &[u8]| {
+                        std::str::from_utf8(num)
+                            .expect(concat!(
+                                "valid UTF-8 in ",
+                                stringify!($type_name)
+                            ))
+                            .parse()
+                            .expect(concat!("valid ", stringify!($type_name)))
+                    }),
+                )(s)
             }
         }
     };
     ($type_name:ty $implementation:block $further_processing:block ) => {
         impl<'a> FromSql<'a> for $type_name {
             fn from_sql(s: &'a [u8]) -> IResult<'a, $type_name> {
-                map($implementation, $further_processing)(s)
+                context(
+                    concat!("number (", stringify!($type_name), ")"),
+                    map($implementation, $further_processing),
+                )(s)
             }
         }
     };
@@ -142,20 +366,23 @@ float!(f64);
 /// like timestamps, which only contain `[0-9: -]`.
 impl<'a> FromSql<'a> for &'a str {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        map(
-            preceded(
-                tag(B("'")),
-                terminated(
-                    map(opt(is_not(B("'"))), |opt| {
-                        opt.unwrap_or_else(|| B(""))
-                    }),
+        context(
+            "string with no escape sequences",
+            map(
+                preceded(
                     tag(B("'")),
+                    terminated(
+                        map(opt(is_not(B("'"))), |opt| {
+                            opt.unwrap_or_else(|| B(""))
+                        }),
+                        tag(B("'")),
+                    ),
                 ),
+                |bytes| {
+                    std::str::from_utf8(bytes)
+                        .expect("valid UTF-8 in unescaped string")
+                },
             ),
-            |bytes| {
-                std::str::from_utf8(bytes)
-                    .expect("valid UTF-8 in unescaped string")
-            },
         )(s)
     }
 }
@@ -164,10 +391,13 @@ impl<'a> FromSql<'a> for &'a str {
 /// to be valid UTF-8, like page titles.
 impl<'a> FromSql<'a> for String {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        map(<Vec<u8>>::from_sql, |s| {
-            String::from_utf8(s)
-                .expect("valid UTF-8 in potentially escaped string")
-        })(s)
+        context(
+            "string",
+            map(<Vec<u8>>::from_sql, |s| {
+                String::from_utf8(s)
+                    .expect("valid UTF-8 in potentially escaped string")
+            }),
+        )(s)
     }
 }
 
@@ -176,30 +406,39 @@ impl<'a> FromSql<'a> for String {
 // bits, sometimes in the middle of a UTF-8 sequence.
 impl<'a> FromSql<'a> for Vec<u8> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        preceded(
-            tag(B("'")),
-            terminated(
-                map(
-                    opt(escaped_transform(
-                        is_not(B("\\\"'\r\n\t")),
-                        '\\',
-                        |s: &[u8]| {
-                            map(one_of(B(r#"tnr\'""#)), |b| match b {
-                                't' => B("\t"),
-                                'n' => b"\n",
-                                'r' => b"\r",
-                                '\\' => b"\\",
-                                '\'' => b"'",
-                                '"' => b"\"",
-                                _ => unreachable!(),
-                            })(s)
-                        },
-                    )),
-                    |opt| opt.unwrap_or_else(Vec::new),
-                ),
+        context(
+            "byte string",
+            preceded(
                 tag(B("'")),
+                terminated(
+                    map(
+                        opt(escaped_transform(
+                            is_not(B("\\\"'\r\n\t")),
+                            '\\',
+                            |s: &[u8]| {
+                                map(one_of(B(r#"tnr\'""#)), |b| match b {
+                                    't' => B("\t"),
+                                    'n' => b"\n",
+                                    'r' => b"\r",
+                                    '\\' => b"\\",
+                                    '\'' => b"'",
+                                    '"' => b"\"",
+                                    _ => unreachable!(),
+                                })(s)
+                            },
+                        )),
+                        |opt| opt.unwrap_or_else(Vec::new),
+                    ),
+                    tag(B("'")),
+                ),
             ),
         )(s)
+    }
+}
+
+impl<'a> FromSql<'a> for () {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
+        context("unit type", map(tag("NULL"), |_| ()))(s)
     }
 }
 
@@ -208,7 +447,13 @@ where
     T: FromSql<'a>,
 {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        alt((map(T::from_sql, Some), map(tag("NULL"), |_| None)))(s)
+        context(
+            "optional type",
+            alt((
+                context("“NULL”", map(<()>::from_sql, |_| None)),
+                map(T::from_sql, Some),
+            )),
+        )(s)
     }
 }
 
@@ -225,7 +470,10 @@ macro_rules! impl_wrapper {
 
             impl<$l1> FromSql<$l1> for $wrapper<$l1> {
                 fn from_sql(s: &$l1 [u8]) -> IResult<$l1, Self> {
-                    map(<&$l2 $wrapped_type>::from_sql, $wrapper)(s)
+                    context(
+                        stringify!($wrapper),
+                        map(<&$l2 $wrapped_type>::from_sql, $wrapper)
+                    )(s)
                 }
             }
 
@@ -260,7 +508,10 @@ macro_rules! impl_wrapper {
 
             impl<'input> FromSql<'input> for $wrapper {
                 fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
-                    map(<$wrapped>::from_sql, $wrapper)(s)
+                    context(
+                        stringify!($wrapper),
+                        map(<$wrapped>::from_sql, $wrapper)
+                    )(s)
                 }
             }
 
@@ -488,16 +739,17 @@ pub struct Timestamp(NaiveDateTime);
 
 impl<'input> FromSql<'input> for Timestamp {
     fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
-        map(<&str>::from_sql, |s| {
-            Timestamp(
+        context(
+            "date and time in yyyymmddhhmmss or yyyy-mm-dd hh:mm::ss format",
+            map_res(<&str>::from_sql, |s| {
                 if s.len() == 14 {
                     NaiveDateTime::parse_from_str(s, "%Y%m%d%H%M%S")
                 } else {
                     NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
                 }
-                .expect("valid date in yyyymmddhhmmss or yyyy-mm-dd hh:mm::ss format"),
-            )
-        })(s)
+                .map(Timestamp)
+            }),
+        )(s)
     }
 }
 
@@ -520,10 +772,16 @@ pub enum Expiry {
 
 impl<'input> FromSql<'input> for Expiry {
     fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
-        alt((
-            map(Timestamp::from_sql, Expiry::Timestamp),
-            map(tag("infinity"), |_| Expiry::Infinity),
-        ))(s)
+        context(
+            "expiry",
+            alt((
+                map(Timestamp::from_sql, Expiry::Timestamp),
+                context(
+                    "“infinity”",
+                    map(tag("infinity"), |_| Expiry::Infinity),
+                ),
+            )),
+        )(s)
     }
 }
 
