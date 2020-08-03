@@ -17,18 +17,69 @@ use ordered_float::NotNan;
 use crate::{
     types::{
         ActorId, CategoryId, ChangeTagDefId, ChangeTagId, CommentId,
-        ContentModel, Expiry, ExternalLinksId, FromSql, FullPageTitle, IResult,
-        LogId, MajorMime, MediaType, MinorMime, PageAction, PageId,
-        PageNamespace, PageRestrictionsId, PageRestrictionsOld, PageTitle,
-        PageType, ProtectionLevel, RecentChangesId, RevisionId, Sha1,
-        Timestamp, UserGroup, UserId,
+        ContentModel, Expiry, ExternalLinksId, FromSql,
+        FullPageTitle, IResult, LogId, MajorMime, MediaType, MinorMime,
+        PageAction, PageCount, PageId, PageNamespace, PageRestrictionsId,
+        PageRestrictionsOld, PageTitle, PageType, ProtectionLevel,
+        RecentChangesId, RevisionId, Sha1, Timestamp, UserGroup, UserId,
     },
     FromSqlTuple,
 };
 
-macro_rules! impl_row_from_sql {
+macro_rules! mediawiki_link {
+    (
+        $text:expr,
+        $page:expr $(,)?
+    ) => {
+        concat! {"[",
+            $text,
+            "](https://www.mediawiki.org/wiki/",
+            $page,
+            ")"
+        }
+    }
+}
+
+macro_rules! with_doc_comment {
+    (
+        $comment:expr,
+        $($item:item)+
+    ) => {
+        #[doc = $comment]
+        $($item)+
+    }
+}
+
+macro_rules! database_table_doc {
     (
         $table_name:ident
+    ) => {
+        concat! {
+            "Represents the ",
+            mediawiki_link!(
+                concat!("`", stringify!($table_name), "` table"),
+                concat!("Manual:", stringify!($table_name), "_table"),
+            ),
+            ".",
+        }
+    };
+    (
+        $table_name:ident, $page_name:literal
+    ) => {
+        concat!(
+            "Represents the ",
+            mediawiki_link!(
+                concat!("`", stringify!($table_name), "` table"),
+                $page_name,
+            ),
+            ".",
+        )
+    };
+}
+
+macro_rules! impl_row_from_sql {
+    (
+        $table_name:ident $(: $page:literal)?
         $output_type:ident {
             $(
                 $(#[$field_meta:meta])*
@@ -37,8 +88,8 @@ macro_rules! impl_row_from_sql {
             $(,)?
         }
     ) => {
-        impl_row_from_sql! {
-            @database_table_doc($table_name)
+        with_doc_comment! {
+            database_table_doc!($table_name $(, $page)?),
             #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub struct $output_type {
                 $(
@@ -86,7 +137,7 @@ macro_rules! impl_row_from_sql {
         }
     };
     (
-        $table_name:ident
+        $table_name:ident $(: $page:literal)?
         $output_type:ident<$life:lifetime> {
             $(
                 $(#[$field_meta:meta])*
@@ -94,8 +145,8 @@ macro_rules! impl_row_from_sql {
             )+
         }
     ) => {
-        impl_row_from_sql! {
-            @database_table_doc($table_name)
+        with_doc_comment! {
+            database_table_doc!($table_name $(, $page)?),
             #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub struct $output_type<$life> {
                 $($(#[$field_meta])* pub $field_name: $type_name),+
@@ -139,26 +190,15 @@ macro_rules! impl_row_from_sql {
             }
         }
     };
-    (
-        @database_table_doc($table_name:ident)
-        $($items:item)+
-    ) => {
-        impl_row_from_sql! {
-            @with_doc_comment
-            #[doc = concat!(
-                "Represents the [`",
-                stringify!($table_name),
-                "` table](https://www.mediawiki.org/wiki/Manual:",
-                stringify!($table_name),
-                "_table).",
-            )]
-            $($items)+
-        }
-    };
-    (@with_doc_comment #[doc = $comment:expr] $($metas:meta)* $($items:item)+) => {
-        #[doc = $comment]
-        $($items)+
-    };
+}
+
+impl_row_from_sql! {
+    babel: "Extension:Babel/babel_table"
+    Babel<'input> {
+        user: UserId,
+        lang: &'input str,
+        level: &'input str,
+    }
 }
 
 impl_row_from_sql! {
@@ -166,16 +206,16 @@ impl_row_from_sql! {
     Category {
         id: CategoryId,
         title: PageTitle,
-        pages: u32,
-        subcats: u32,
-        files: u32,
+        pages: PageCount,
+        subcats: PageCount,
+        files: PageCount,
     }
 }
 
 impl_row_from_sql! {
     categorylinks
-    CategoryLinks<'input> {
-        id: PageId,
+    CategoryLinks {
+        from: PageId,
         to: PageTitle,
         /// Can be truncated in the middle of a UTF-8 sequence,
         /// so cannot be represented as a `String`.
@@ -187,7 +227,19 @@ impl_row_from_sql! {
         /// been truncated in the middle of a multi-byte sequence.
         sortkey_prefix: Vec<u8>,
         collation: String,
-        r#type: PageType<'input>,
+        r#type: PageType,
+    }
+}
+
+impl_row_from_sql! {
+    change_tag
+    ChangeTag {
+        id: ChangeTagId,
+        recent_changes_id: Option<RecentChangesId>,
+        log_id: Option<LogId>,
+        revision_id: Option<RevisionId>,
+        params: Option<String>,
+        tag_id: ChangeTagDefId,
     }
 }
 
@@ -197,19 +249,7 @@ impl_row_from_sql! {
         id: ChangeTagDefId,
         name: String,
         user_defined: bool,
-        count: u32,
-    }
-}
-
-impl_row_from_sql! {
-    change_tag
-    ChangeTag {
-        id: ChangeTagId,
-        recent_change_id: Option<RecentChangesId>,
-        log_id: Option<LogId>,
-        revision_id: Option<RevisionId>,
-        params: Option<String>,
-        tag_id: Option<ChangeTagDefId>,
+        count: u64,
     }
 }
 
@@ -219,8 +259,8 @@ impl_row_from_sql! {
         id: ExternalLinksId,
         from: PageId,
         to: String,
-        index: String,
-        index_60: String,
+        index: Vec<u8>,
+        index_60: Vec<u8>,
     }
 }
 
@@ -240,10 +280,6 @@ impl_row_from_sql! {
         actor: ActorId,
         timestamp: Timestamp,
         sha1: Sha1<'input>,
-        /// Not mentioned in the
-        /// [MediaWiki documentation](https://www.mediawiki.org/wiki/Manual:Image_table),
-        /// but present in the dump of the English Wiktionary.
-        deleted: i8,
     }
 }
 
@@ -251,8 +287,8 @@ impl_row_from_sql! {
     imagelinks
     ImageLinks {
         from: PageId,
-        namespace: PageNamespace,
         to: PageTitle,
+        from_namespace: PageNamespace,
     }
 }
 
@@ -310,9 +346,19 @@ impl_row_from_sql! {
     pagelinks
     PageLinks {
         from: PageId,
-        from_namespace: PageNamespace,
         namespace: PageNamespace,
         title: PageTitle,
+        from_namespace: PageNamespace,
+    }
+}
+
+impl_row_from_sql! {
+    page_props
+    PageProps<'input> {
+        page: PageId,
+        name: &'input str,
+        value: Vec<u8>,
+        sortkey: Option<NotNan<f64>>,
     }
 }
 
@@ -337,6 +383,46 @@ impl_row_from_sql! {
         title: PageTitle,
         interwiki: Option<&'input str>,
         fragment: Option<String>,
+    }
+}
+
+impl_row_from_sql! {
+    sites
+    Site<'input> {
+        id: u32,
+        global_key: &'input str,
+        r#type: &'input str,
+        group: &'input str,
+        source: &'input str,
+        language: &'input str,
+        protocol: &'input str,
+        domain: &'input [u8],
+        data: String,
+        forward: i8,
+        config: String,
+    }
+}
+
+impl_row_from_sql! {
+    site_stats
+    SiteStats {
+        row_id: u32,
+        total_edits: u64,
+        good_articles: u64,
+        total_pages: u64,
+        users: u64,
+        images: u64,
+        active_users: u64,
+    }
+}
+
+impl_row_from_sql! {
+    wbc_entity_usage: "Wikibase/Schema/wbc_entity_usage"
+    WikibaseClientEntityUsage<'input> {
+        row_id: u64,
+        entity_id: &'input str,
+        aspect: &'input str,
+        page_id: PageId,
     }
 }
 

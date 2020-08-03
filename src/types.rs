@@ -21,6 +21,7 @@ use nom::{
 use ordered_float::NotNan;
 use std::{
     collections::BTreeMap,
+    convert::TryFrom,
     fmt::Display,
     iter::FromIterator,
     ops::{Deref, Index},
@@ -160,7 +161,7 @@ impl<'a> ParseError<&'a [u8]> for Error<'a> {
     }
 }
 
-const INPUT_GRAPHEMES_TO_SHOW: usize = 50;
+const INPUT_GRAPHEMES_TO_SHOW: usize = 100;
 
 impl<'a> Display for Error<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -362,27 +363,34 @@ macro_rules! float {
 float!(f32);
 float!(f64);
 
+/// Use this for byte strings that have no escape sequences.
+impl<'a> FromSql<'a> for &'a [u8] {
+    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
+        context(
+            "byte string with no escape sequences",
+            preceded(
+                tag(B("'")),
+                terminated(
+                    map(opt(is_not(B("'"))), |opt| {
+                        opt.unwrap_or_else(|| B(""))
+                    }),
+                    tag(B("'")),
+                ),
+            ),
+        )(s)
+    }
+}
+
 /// Use this for string-like types that have no escape sequences,
 /// like timestamps, which only contain `[0-9: -]`.
 impl<'a> FromSql<'a> for &'a str {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context(
             "string with no escape sequences",
-            map(
-                preceded(
-                    tag(B("'")),
-                    terminated(
-                        map(opt(is_not(B("'"))), |opt| {
-                            opt.unwrap_or_else(|| B(""))
-                        }),
-                        tag(B("'")),
-                    ),
-                ),
-                |bytes| {
-                    std::str::from_utf8(bytes)
-                        .expect("valid UTF-8 in unescaped string")
-                },
-            ),
+            map(<&[u8]>::from_sql, |bytes| {
+                std::str::from_utf8(bytes)
+                    .expect("valid UTF-8 in unescaped string")
+            }),
         )(s)
     }
 }
@@ -413,16 +421,20 @@ impl<'a> FromSql<'a> for Vec<u8> {
                 terminated(
                     map(
                         opt(escaped_transform(
-                            is_not(B("\\\"'\r\n\t")),
+                            is_not(B("\\\"'")),
                             '\\',
                             |s: &[u8]| {
-                                map(one_of(B(r#"tnr\'""#)), |b| match b {
-                                    't' => B("\t"),
+                                map(one_of(B(r#"\n0btnrZ\'""#)), |b| match b {
+                                    '0' => B("\0"),
+                                    'b' => b"\x08",
+                                    't' => b"\t",
                                     'n' => b"\n",
                                     'r' => b"\r",
+                                    'Z' => b"\x1A",
                                     '\\' => b"\\",
                                     '\'' => b"'",
                                     '"' => b"\"",
+                                    '\n' => b"\n",
                                     _ => unreachable!(),
                                 })(s)
                             },
@@ -607,6 +619,18 @@ the primary key of the `category` table.
 impl_wrapper! {
     #[doc = "
 Represents
+[`cat_pages`](https://www.mediawiki.org/wiki/Manual:Category_table#cat_id),
+[`cat_subcats`](https://www.mediawiki.org/wiki/Manual:Category_table#cat_subcats),
+and [`cat_files`](https://www.mediawiki.org/wiki/Manual:Category_table#cat_files)
+fields of the `category` table. They should logically be greater than
+or equal to 0, but because of errors can be negative.
+"]
+    PageCount: i32
+}
+
+impl_wrapper! {
+    #[doc = "
+Represents
 [`log_id`](https://www.mediawiki.org/wiki/Manual:Logging_table#log_id),
 the primary key of the `logging` table.
 "]
@@ -734,13 +758,13 @@ fn test_copy_for_wrappers() {
 /// given as a string in `yyyymmddhhmmss` format. Provides the methods of
 /// [`NaiveDateTime`] through
 /// [`Deref`].
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Timestamp(NaiveDateTime);
 
 impl<'input> FromSql<'input> for Timestamp {
     fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
         context(
-            "date and time in yyyymmddhhmmss or yyyy-mm-dd hh:mm::ss format",
+            "Timestamp in yyyymmddhhmmss or yyyy-mm-dd hh:mm::ss format",
             map_res(<&str>::from_sql, |s| {
                 if s.len() == 14 {
                     NaiveDateTime::parse_from_str(s, "%Y%m%d%H%M%S")
@@ -764,7 +788,7 @@ impl Deref for Timestamp {
 /// Represents the
 /// [`pr_expiry`](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table#pr_expiry)
 /// field of the `page_restrictions` table.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Expiry {
     Timestamp(Timestamp),
     Infinity,
@@ -773,12 +797,12 @@ pub enum Expiry {
 impl<'input> FromSql<'input> for Expiry {
     fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
         context(
-            "expiry",
+            "Expiry",
             alt((
                 map(Timestamp::from_sql, Expiry::Timestamp),
                 context(
                     "“infinity”",
-                    map(tag("infinity"), |_| Expiry::Infinity),
+                    map(tag("'infinity'"), |_| Expiry::Infinity),
                 ),
             )),
         )(s)
@@ -788,39 +812,42 @@ impl<'input> FromSql<'input> for Expiry {
 /// Represents the
 /// [`cl_type`](https://www.mediawiki.org/wiki/Manual:Categorylinks_table#cl_type)
 /// field of the `categorylinks` table.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub enum PageType<'a> {
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum PageType {
     Page,
     Subcat,
     File,
-    Other(&'a str),
 }
 
-impl<'a> From<&'a str> for PageType<'a> {
-    fn from(s: &'a str) -> Self {
+/// Returns the unrecognized string as the error value.
+impl<'a> TryFrom<&'a str> for PageType {
+    type Error = &'a str;
+
+    fn try_from(s: &'a str) -> Result<Self, &'a str> {
         use PageType::*;
         match s {
-            "page" => Page,
-            "subcat" => Subcat,
-            "file" => File,
-            _ => Other(s),
+            "page" => Ok(Page),
+            "subcat" => Ok(Subcat),
+            "file" => Ok(File),
+            other => Err(other),
         }
     }
 }
 
-impl<'a> FromSql<'a> for PageType<'a> {
+impl<'a> FromSql<'a> for PageType {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        map(<&str>::from_sql, PageType::from)(s)
+        context("PageType", map_res(<&str>::from_sql, PageType::try_from))(s)
     }
 }
 
 /// Represents the
 /// [`pr_type`](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table#pr_type)
 /// field of the `page_restrictions` table, the action that is restricted.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum PageAction<'a> {
     Edit,
     Move,
+    Reply,
     Upload,
     All,
     Other(&'a str),
@@ -832,6 +859,7 @@ impl<'a> From<&'a str> for PageAction<'a> {
         match s {
             "edit" => Edit,
             "move" => Move,
+            "reply" => Reply,
             "upload" => Upload,
             _ => Other(s),
         }
@@ -848,7 +876,7 @@ impl<'a> FromSql<'a> for PageAction<'a> {
 /// [`pr_level`](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table#pr_level)
 /// field of the `page_restrictions` table, the group that is allowed
 /// to perform the action.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ProtectionLevel<'a> {
     Autoconfirmed,
     ExtendedConfirmed,
@@ -879,7 +907,10 @@ impl<'a> From<&'a str> for ProtectionLevel<'a> {
 
 impl<'a> FromSql<'a> for ProtectionLevel<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        map(<&str>::from_sql, ProtectionLevel::from)(s)
+        context(
+            "ProtectionLevel",
+            map(<&str>::from_sql, ProtectionLevel::from),
+        )(s)
     }
 }
 
@@ -960,28 +991,32 @@ impl<'a> FromIterator<(PageAction<'a>, Vec<ProtectionLevel<'a>>)>
 
 impl<'a> FromSql<'a> for PageRestrictionsOld<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        map(<&str>::from_sql, |contents| {
-            PageRestrictionsOld(
-                contents
-                    .split(':')
-                    .filter(|p| !p.is_empty())
-                    .map(|restriction| {
-                        let mut type_and_levels = restriction.rsplitn(2, '=');
-                        let level = type_and_levels
-                            .next()
-                            .expect("level of page restriction")
-                            .split(',')
-                            .map(|l| l.into())
-                            .collect();
-                        let action = type_and_levels
-                            .next()
-                            .map(|a| a.into())
-                            .unwrap_or(PageAction::All);
-                        (action, level)
-                    })
-                    .collect(),
-            )
-        })(s)
+        context(
+            "PageRestrictionsOld",
+            map_res(<&str>::from_sql, |contents| -> Result<_, &'static str> {
+                Ok(PageRestrictionsOld(
+                    contents
+                        .split(':')
+                        .filter(|p| !p.is_empty())
+                        .map(|restriction| -> Result<_, &'static str> {
+                            let mut type_and_levels =
+                                restriction.rsplitn(2, '=');
+                            let level = type_and_levels
+                                .next()
+                                .ok_or("expected page restriction level")?
+                                .split(',')
+                                .map(|l| l.into())
+                                .collect();
+                            let action = type_and_levels
+                                .next()
+                                .map(|a| a.into())
+                                .unwrap_or(PageAction::All);
+                            Ok((action, level))
+                        })
+                        .collect::<Result<_, _>>()?,
+                ))
+            }),
+        )(s)
     }
 }
 
@@ -1020,7 +1055,7 @@ fn test_page_restrictions() {
 /// Represents the
 /// [`page_content_model`](https://www.mediawiki.org/wiki/Manual:Page_table#page_content_model)
 /// field of the `page` table.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ContentModel<'a> {
     Wikitext,
     Scribunto,
@@ -1050,14 +1085,14 @@ impl<'a> From<&'a str> for ContentModel<'a> {
 
 impl<'a> FromSql<'a> for ContentModel<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        map(<&str>::from_sql, ContentModel::from)(s)
+        context("ContentModel", map(<&str>::from_sql, ContentModel::from))(s)
     }
 }
 
 /// Represents the
 /// [`img_media_type`](https://www.mediawiki.org/wiki/Manual:Image_table#img_media_type)
 /// field of the `image` table.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum MediaType<'a> {
     Unknown,
     Bitmap,
@@ -1096,14 +1131,14 @@ impl<'a> From<&'a str> for MediaType<'a> {
 
 impl<'a> FromSql<'a> for MediaType<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        map(<&str>::from_sql, MediaType::from)(s)
+        context("MediaType", map(<&str>::from_sql, MediaType::from))(s)
     }
 }
 
 /// Represents the
 /// [`img_major_mime`](https://www.mediawiki.org/wiki/Manual:Image_table#img_major_mime)
 /// field of the `image` table.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum MajorMime<'a> {
     Unknown,
     Application,
@@ -1137,7 +1172,7 @@ impl<'a> From<&'a str> for MajorMime<'a> {
 
 impl<'a> FromSql<'a> for MajorMime<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        map(<&str>::from_sql, MajorMime::from)(s)
+        context("MajorMime", map(<&str>::from_sql, MajorMime::from))(s)
     }
 }
 

@@ -90,8 +90,8 @@ fn main() {
             let to: &String = to.into();
             to.starts_with("English_") || to.starts_with("en:")
         })
-        .fold(Map::new(), |mut map, CategoryLinks { id, to, .. }| {
-            let entry = map.entry(id).or_insert_with(Vec::new);
+        .fold(Map::new(), |mut map, CategoryLinks { from, to, .. }| {
+            let entry = map.entry(from).or_insert_with(Vec::new);
             let to: String = to.into_inner();
             entry.push(to);
             map
