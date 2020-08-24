@@ -1,46 +1,75 @@
 use memmap::Mmap;
-use serde_json::Value;
+use serde::Deserialize;
 use std::collections::{BTreeMap as Map, BTreeSet as Set};
-use std::fs::File;
+use std::io::prelude::*;
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+    process,
+};
+use thiserror::Error;
 
+use flate2::read::GzDecoder;
 use parse_mediawiki_sql::{
     iterate_sql_insertions,
     schemas::{Page, Redirect},
     types::{PageNamespace, PageTitle},
 };
+use pico_args::{Arguments, Error as PicoArgsError, Keys};
 
-unsafe fn memory_map(path: &str) -> Mmap {
-    Mmap::map(
-        &File::open(path)
-            .unwrap_or_else(|e| panic!("Failed to open {}: {}", &path, e)),
-    )
-    .unwrap_or_else(|e| panic!("Failed to memory-map {}: {}", &path, e))
+#[derive(Debug, Deserialize)]
+struct Response {
+    query: Query,
 }
 
-fn get_namespace_id_to_name(filepath: &str) -> Map<PageNamespace, String> {
-    let siteinfo_namespaces = unsafe { memory_map(filepath) };
-    let json = unsafe { std::str::from_utf8_unchecked(&siteinfo_namespaces) };
-    let mut data: Value = serde_json::from_str(json).unwrap();
-    match data["query"].take()["namespaces"].take() {
-        Value::Object(map) => map
-            .into_iter()
-            .map(|(k, v)| {
-                if let Ok(namespace) = k.parse::<i32>().map(PageNamespace::from)
-                {
-                    (
-                        namespace,
-                        v.as_object().unwrap()["*"]
-                            .as_str()
-                            .unwrap()
-                            .to_string(),
-                    )
-                } else {
-                    panic!("{} is not a valid integer", k);
-                }
-            })
-            .collect(),
-        _ => panic!("bad json apparently"),
-    }
+#[derive(Debug, Deserialize)]
+struct Query {
+    namespaces: Map<String, NamespaceInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NamespaceInfo {
+    id: i32,
+    #[serde(rename = "*")]
+    name: String,
+    #[serde(rename = "canonical")]
+    canonical_name: Option<String>,
+}
+
+unsafe fn memory_map(path: &Path) -> Mmap {
+    Mmap::map(
+        &File::open(path).unwrap_or_else(|e| {
+            panic!("Failed to open {}: {}", path.display(), e)
+        }),
+    )
+    .unwrap_or_else(|e| {
+        panic!("Failed to memory-map {}: {}", path.display(), e)
+    })
+}
+
+fn get_namespace_id_to_name(filepath: &Path) -> Map<PageNamespace, String> {
+    let json = if filepath.extension() == Some("gz".as_ref()) {
+        let gz =
+            File::open(filepath).expect("could not open siteinfo-namespaces");
+        let mut decoder = GzDecoder::new(gz);
+        let mut decoded = String::new();
+        decoder
+            .read_to_string(&mut decoded)
+            .expect("failed to read siteinfo-namespaces gzip");
+        decoded
+    } else {
+        std::fs::read_to_string(filepath)
+            .expect("failed to read siteinfo-namespaces")
+    };
+    let response: Response = serde_json::from_str(&json).unwrap();
+    response
+        .query
+        .namespaces
+        .into_iter()
+        .map(|(_, namespace_info)| {
+            (PageNamespace::from(namespace_info.id), namespace_info.name)
+        })
+        .collect()
 }
 
 fn readable_title(
@@ -61,23 +90,108 @@ fn readable_title(
         .unwrap()
 }
 
+enum Args {
+    Help,
+    PrintRedirects {
+        page_path: PathBuf,
+        redirect_path: PathBuf,
+        namespace_id_to_name: Map<PageNamespace, String>,
+        namespaces: Set<PageNamespace>,
+    },
+}
+
+#[derive(Debug, Error)]
+enum Error {
+    #[error("No namespaces provided in positional arguments")]
+    NoNamespaces,
+    #[error("Error parsing arguments: {0}")]
+    PicoArgs(#[from] PicoArgsError),
+}
+
+static USAGE: &str = "
+redirects-by-namespace [arguments] namespace...
+-p, --page                  path to page.sql [default: page.sql]
+-r, --redirect              path to redirect.sql [default: redirect.sql]
+-s, --siteinfo-namespaces   path to siteinfo-namespaces.json or
+                            siteinfo-namespaces.json.gz
+                            [default: siteinfo-namespaces.json]
+
+Multiple namespace ids can be provided as positional arguments.
+";
+
+fn get_args() -> Result<Args, Error> {
+    let mut args = pico_args::Arguments::from_env();
+
+    if args.contains(["-h", "--help"]) {
+        return Ok(Args::Help);
+    }
+
+    fn path_from_args(
+        args: &mut Arguments,
+        keys: impl Into<Keys>,
+        default: impl Into<PathBuf>,
+    ) -> PathBuf {
+        args.value_from_os_str(keys, |opt| {
+            Result::<_, PicoArgsError>::Ok(PathBuf::from(opt))
+        })
+        .unwrap_or_else(|_| default.into())
+    }
+
+    let page_path = path_from_args(&mut args, ["-p", "--page"], "page.sql");
+    let redirect_path =
+        path_from_args(&mut args, ["-r", "--redirect"], "redirect.sql");
+    let siteinfo_namespaces_path = path_from_args(
+        &mut args,
+        ["-s", "--siteinfo-namespaces"],
+        "siteinfo-namespaces.json",
+    );
+    let namespaces = args
+        .free()?
+        .into_iter()
+        .map(|n| {
+            n.parse::<i32>()
+                .map_err(|e| PicoArgsError::ArgumentParsingFailed {
+                    cause: e.to_string(),
+                })
+                .map(PageNamespace::from)
+        })
+        .collect::<Result<Set<_>, _>>()?;
+    if namespaces.is_empty() {
+        return Err(Error::NoNamespaces);
+    }
+    let namespace_id_to_name =
+        get_namespace_id_to_name(&siteinfo_namespaces_path);
+    Ok(Args::PrintRedirects {
+        page_path,
+        redirect_path,
+        namespace_id_to_name,
+        namespaces,
+    })
+}
+
 // Takes a list of namespaces, which must be parsable as `i32`,
 // as arguments. Expects page.sql and redirect.sql and siteinfo-namespaces.json
 // in the current directory.
 fn main() {
-    let page_sql = unsafe { memory_map("page.sql") };
-    let redirect_sql = unsafe { memory_map("redirect.sql") };
-    let namespace_id_to_name =
-        get_namespace_id_to_name("siteinfo-namespaces.json");
-    let namespaces = std::env::args()
-        .skip(1)
-        .map(|s| s.parse::<i32>().map(PageNamespace::from))
-        .collect::<Result<Set<PageNamespace>, _>>()
-        .unwrap();
-    if namespaces.is_empty() {
-        eprintln!("No namespaces provided");
-        std::process::exit(-1);
-    }
+    let (page_path, redirect_path, namespace_id_to_name, namespaces) =
+        match get_args() {
+            Ok(Args::PrintRedirects {
+                page_path,
+                redirect_path,
+                namespace_id_to_name,
+                namespaces,
+            }) => (page_path, redirect_path, namespace_id_to_name, namespaces),
+            Ok(Args::Help) => {
+                eprintln!("{}", USAGE);
+                return;
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                process::exit(1);
+            }
+        };
+    let page_sql = unsafe { memory_map(&page_path) };
+    let redirect_sql = unsafe { memory_map(&redirect_path) };
     let mut pages = iterate_sql_insertions::<Page>(&page_sql);
     let id_to_title: Map<_, _> = pages
         .filter(

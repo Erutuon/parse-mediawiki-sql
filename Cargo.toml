@@ -20,6 +20,10 @@ nom = "5.1"
 ordered-float = "2.0"
 
 [dev-dependencies]
+flate2 = "1.0.17"
 memmap = "0.7"
+pico-args = "0.3.4"
+serde = { version = "1.0.115", features = ["derive"] }
 serde_json = "1.0.57"
 static_assertions = "1.1.0"
+thiserror = "1.0.20"
