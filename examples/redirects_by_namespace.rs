@@ -1,11 +1,10 @@
 use memmap::Mmap;
 use serde::Deserialize;
-use std::collections::{BTreeMap as Map, BTreeSet as Set};
-use std::io::prelude::*;
 use std::{
+    collections::{BTreeMap as Map, BTreeSet as Set},
     fs::File,
+    io::prelude::*,
     path::{Path, PathBuf},
-    process,
 };
 use thiserror::Error;
 
@@ -16,6 +15,27 @@ use parse_mediawiki_sql::{
     types::{PageNamespace, PageTitle},
 };
 use pico_args::{Arguments, Error as PicoArgsError, Keys};
+
+static USAGE: &str = "
+redirects-by-namespace [arguments] namespace...
+-p, --page                  path to page.sql [default: page.sql]
+-r, --redirect              path to redirect.sql [default: redirect.sql]
+-s, --siteinfo-namespaces   path to siteinfo-namespaces.json or
+                            siteinfo-namespaces.json.gz
+                            [default: siteinfo-namespaces.json]
+
+Multiple namespace ids can be provided as positional arguments.
+";
+
+enum Args {
+    Help,
+    PrintRedirects {
+        page_path: PathBuf,
+        redirect_path: PathBuf,
+        namespace_id_to_name: Map<PageNamespace, String>,
+        namespaces: Set<PageNamespace>,
+    },
+}
 
 #[derive(Debug, Deserialize)]
 struct Response {
@@ -36,88 +56,92 @@ struct NamespaceInfo {
     canonical_name: Option<String>,
 }
 
-unsafe fn memory_map(path: &Path) -> Mmap {
-    Mmap::map(
-        &File::open(path).unwrap_or_else(|e| {
-            panic!("Failed to open {}: {}", path.display(), e)
-        }),
-    )
-    .unwrap_or_else(|e| {
-        panic!("Failed to memory-map {}: {}", path.display(), e)
+#[derive(Debug, Error)]
+enum Error {
+    #[error("No namespaces provided in positional arguments")]
+    NoNamespaces,
+    #[error("Error parsing arguments")]
+    PicoArgs(#[from] PicoArgsError),
+    #[error("Failed to parse JSON at {}", path.canonicalize().as_ref().unwrap_or(path).display())]
+    JsonFile {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    #[error("Failed to {action} at {}", path.canonicalize().as_ref().unwrap_or(path).display())]
+    IoError {
+        action: &'static str,
+        source: std::io::Error,
+        path: PathBuf,
+    },
+}
+
+unsafe fn memory_map(path: &Path) -> Result<Mmap, Error> {
+    Mmap::map(&File::open(path).map_err(|source| Error::IoError {
+        action: "open file",
+        source,
+        path: path.into(),
+    })?)
+    .map_err(|source| Error::IoError {
+        action: "memory map file",
+        source,
+        path: path.into(),
     })
 }
 
-fn get_namespace_id_to_name(filepath: &Path) -> Map<PageNamespace, String> {
-    let json = if filepath.extension() == Some("gz".as_ref()) {
-        let gz =
-            File::open(filepath).expect("could not open siteinfo-namespaces");
+fn get_namespace_id_to_name(
+    path: &Path,
+) -> Result<Map<PageNamespace, String>, Error> {
+    let json = if path.extension() == Some("gz".as_ref()) {
+        let gz = File::open(path).map_err(|source| Error::IoError {
+            action: "open file",
+            source,
+            path: path.into(),
+        })?;
         let mut decoder = GzDecoder::new(gz);
         let mut decoded = String::new();
-        decoder
-            .read_to_string(&mut decoded)
-            .expect("failed to read siteinfo-namespaces gzip");
+        decoder.read_to_string(&mut decoded).map_err(|source| {
+            Error::IoError {
+                action: "parse GZip",
+                source,
+                path: path.into(),
+            }
+        })?;
         decoded
     } else {
-        std::fs::read_to_string(filepath)
-            .expect("failed to read siteinfo-namespaces")
+        std::fs::read_to_string(path).map_err(|source| Error::IoError {
+            action: "read file to string",
+            source,
+            path: path.into(),
+        })?
     };
-    let response: Response = serde_json::from_str(&json).unwrap();
-    response
+    Ok(serde_json::from_str::<Response>(&json)
+        .map_err(|source| Error::JsonFile {
+            source,
+            path: path.into(),
+        })?
         .query
         .namespaces
         .into_iter()
         .map(|(_, namespace_info)| {
             (PageNamespace::from(namespace_info.id), namespace_info.name)
         })
-        .collect()
+        .collect())
 }
 
 fn readable_title(
     namespace_id_to_name: &Map<PageNamespace, String>,
     title: &PageTitle,
     namespace: &PageNamespace,
-) -> String {
-    namespace_id_to_name
-        .get(&namespace)
-        .map(|n| {
-            let title: &String = title.into();
-            if *n == "" {
-                title.to_string()
-            } else {
-                format!("{}:{}", n, title)
-            }
-        })
-        .unwrap()
+) -> Option<String> {
+    namespace_id_to_name.get(&namespace).map(|n| {
+        let title: &String = title.into();
+        if *n == "" {
+            title.to_string()
+        } else {
+            format!("{}:{}", n, title)
+        }
+    })
 }
-
-enum Args {
-    Help,
-    PrintRedirects {
-        page_path: PathBuf,
-        redirect_path: PathBuf,
-        namespace_id_to_name: Map<PageNamespace, String>,
-        namespaces: Set<PageNamespace>,
-    },
-}
-
-#[derive(Debug, Error)]
-enum Error {
-    #[error("No namespaces provided in positional arguments")]
-    NoNamespaces,
-    #[error("Error parsing arguments: {0}")]
-    PicoArgs(#[from] PicoArgsError),
-}
-
-static USAGE: &str = "
-redirects-by-namespace [arguments] namespace...
--p, --page                  path to page.sql [default: page.sql]
--r, --redirect              path to redirect.sql [default: redirect.sql]
--s, --siteinfo-namespaces   path to siteinfo-namespaces.json or
-                            siteinfo-namespaces.json.gz
-                            [default: siteinfo-namespaces.json]
-
-Multiple namespace ids can be provided as positional arguments.
-";
 
 fn get_args() -> Result<Args, Error> {
     let mut args = pico_args::Arguments::from_env();
@@ -149,18 +173,18 @@ fn get_args() -> Result<Args, Error> {
         .free()?
         .into_iter()
         .map(|n| {
-            n.parse::<i32>()
-                .map_err(|e| PicoArgsError::ArgumentParsingFailed {
+            n.parse::<i32>().map(PageNamespace::from).map_err(|e| {
+                PicoArgsError::ArgumentParsingFailed {
                     cause: e.to_string(),
-                })
-                .map(PageNamespace::from)
+                }
+            })
         })
         .collect::<Result<Set<_>, _>>()?;
     if namespaces.is_empty() {
         return Err(Error::NoNamespaces);
     }
     let namespace_id_to_name =
-        get_namespace_id_to_name(&siteinfo_namespaces_path);
+        get_namespace_id_to_name(&siteinfo_namespaces_path)?;
     Ok(Args::PrintRedirects {
         page_path,
         redirect_path,
@@ -172,26 +196,22 @@ fn get_args() -> Result<Args, Error> {
 // Takes a list of namespaces, which must be parsable as `i32`,
 // as arguments. Expects page.sql and redirect.sql and siteinfo-namespaces.json
 // in the current directory.
-fn main() {
+fn main() -> anyhow::Result<()> {
     let (page_path, redirect_path, namespace_id_to_name, namespaces) =
-        match get_args() {
-            Ok(Args::PrintRedirects {
+        match get_args()? {
+            Args::PrintRedirects {
                 page_path,
                 redirect_path,
                 namespace_id_to_name,
                 namespaces,
-            }) => (page_path, redirect_path, namespace_id_to_name, namespaces),
-            Ok(Args::Help) => {
+            } => (page_path, redirect_path, namespace_id_to_name, namespaces),
+            Args::Help => {
                 eprintln!("{}", USAGE);
-                return;
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-                process::exit(1);
+                return Ok(());
             }
         };
-    let page_sql = unsafe { memory_map(&page_path) };
-    let redirect_sql = unsafe { memory_map(&redirect_path) };
+    let page_sql = unsafe { memory_map(&page_path)? };
+    let redirect_sql = unsafe { memory_map(&redirect_path)? };
     let mut pages = iterate_sql_insertions::<Page>(&page_sql);
     let id_to_title: Map<_, _> = pages
         .filter(
@@ -228,8 +248,9 @@ fn main() {
     for (k, v) in source_to_target {
         println!(
             "{}\t{}",
-            readable_title(&namespace_id_to_name, &k.0, &k.1),
-            readable_title(&namespace_id_to_name, &v.0, &v.1)
+            readable_title(&namespace_id_to_name, &k.0, &k.1).unwrap(),
+            readable_title(&namespace_id_to_name, &v.0, &v.1).unwrap(),
         );
     }
+    Ok(())
 }
