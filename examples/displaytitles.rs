@@ -1,9 +1,3 @@
-use bstr::ByteSlice;
-use flate2::read::GzDecoder;
-use memmap::Mmap;
-use pico_args::{Arguments, Error as PicoArgsError};
-use serde::Deserialize;
-use smartstring::alias::String as SmartString;
 use std::{
     collections::BTreeMap as Map,
     fmt::Write,
@@ -11,37 +5,24 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
 };
-use thiserror::Error;
 
+use flate2::read::GzDecoder;
+use memmap::Mmap;
 use parse_mediawiki_sql::{
-    iterate_sql_insertions,
-    schemas::{CategoryLinks, Page},
+    schemas::{Page, PageProps},
     types::{PageNamespace, PageTitle},
 };
-
-#[derive(Debug, Deserialize)]
-struct Response {
-    query: Query,
-}
-
-#[derive(Debug, Deserialize)]
-struct Query {
-    namespaces: Map<SmartString, NamespaceInfo>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NamespaceInfo {
-    id: i32,
-    #[serde(rename = "*")]
-    name: SmartString,
-    #[serde(rename = "canonical")]
-    canonical_name: Option<SmartString>,
-}
+use pico_args::{Arguments, Error as PicoArgsError};
+use serde::Deserialize;
+use smartstring::alias::String as SmartString;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 enum Error {
     #[error("Error parsing arguments")]
     PicoArgs(#[from] PicoArgsError),
+    #[error("Invalid namespace: {0}")]
+    InvalidNamespace(String),
     #[error("Failed to parse JSON at {}", path.canonicalize().as_ref().unwrap_or(path).display())]
     JsonFile {
         path: PathBuf,
@@ -65,9 +46,23 @@ impl Error {
     }
 }
 
-unsafe fn memory_map(path: &Path) -> Result<Mmap, Error> {
-    Mmap::map(&File::open(path).map_err(|source| Error::from_io("open file", source, path))?)
-        .map_err(|source| Error::from_io("memory map file", source, path))
+#[derive(Debug, Deserialize)]
+struct Response {
+    query: Query,
+}
+
+#[derive(Debug, Deserialize)]
+struct Query {
+    namespaces: Map<SmartString, NamespaceInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NamespaceInfo {
+    id: i32,
+    #[serde(rename = "*")]
+    name: SmartString,
+    #[serde(rename = "canonical")]
+    canonical_name: Option<SmartString>,
 }
 
 struct NamespaceMap(Map<PageNamespace, SmartString>);
@@ -118,6 +113,10 @@ impl NamespaceMap {
             })
             .unwrap()
     }
+
+    fn iter(&self) -> impl Iterator<Item = (&PageNamespace, &SmartString)> {
+        self.0.iter()
+    }
 }
 
 fn opt_path_from_args(
@@ -147,6 +146,11 @@ fn path_from_args_in_dir(
     })
 }
 
+unsafe fn memory_map(path: &Path) -> Result<Mmap, Error> {
+    Mmap::map(&File::open(path).map_err(|source| Error::from_io("open file", source, path))?)
+        .map_err(|source| Error::from_io("memory map file", source, path))
+}
+
 unsafe fn memory_map_from_args_in_dir(
     args: &mut Arguments,
     keys: [&'static str; 2],
@@ -157,73 +161,72 @@ unsafe fn memory_map_from_args_in_dir(
     memory_map(&path)
 }
 
-// Expects categorylinks.sql and page.sql in the current directory.
 fn main() -> anyhow::Result<()> {
     let mut args = Arguments::from_env();
-
     let dump_dir = opt_path_from_args(&mut args, ["-d", "--dump-dir"])?;
+    let props_sql = unsafe {
+        memory_map_from_args_in_dir(&mut args, ["-P", "--props"], "page_props.sql", &dump_dir)?
+    };
     let page_sql =
         unsafe { memory_map_from_args_in_dir(&mut args, ["-p", "--page"], "page.sql", &dump_dir)? };
-    let category_links_sql = unsafe {
-        memory_map_from_args_in_dir(
-            &mut args,
-            ["-c", "--category-links"],
-            "categorylinks.sql",
-            &dump_dir,
-        )?
-    };
     let namespace_id_to_name = NamespaceMap::from_path(&path_from_args_in_dir(
         &mut args,
         ["-s", "--siteinfo-namespaces"],
         "siteinfo-namespaces.json",
         &dump_dir,
     )?)?;
-    let prefixes: Vec<String> = args.values_from_str(["-P", "--prefix"])?;
-
-    args.finish()?;
-
-    let mut category_links = iterate_sql_insertions::<CategoryLinks>(&category_links_sql);
-    let mut pages = iterate_sql_insertions::<Page>(&page_sql);
-    let mut id_to_categories: Map<_, _> = category_links
-        .filter(|CategoryLinks { to, .. }| {
-            let to: &String = to.into();
-            prefixes.iter().any(|prefix| {
-                to.starts_with(prefix)
-            })
+    let namespaces = args
+        .free()?
+        .into_iter()
+        .map(|n| {
+            n.parse()
+                .ok()
+                .or_else(|| {
+                    namespace_id_to_name.iter().find_map(|(id, name)| {
+                        if name.as_str() == n.as_str() {
+                            Some(id.into_inner())
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .ok_or(Error::InvalidNamespace(n))
         })
-        .fold(Map::new(), |mut map, CategoryLinks { from, to, .. }| {
-            let entry = map.entry(from).or_insert_with(Vec::new);
-            let to: String = to.into_inner();
-            entry.push(to);
-            map
-        });
-
-    let page_to_categories = pages.fold(
+        .collect::<Result<Vec<i32>, _>>()?;
+    let mut id_to_displaytitle = parse_mediawiki_sql::iterate_sql_insertions(&props_sql)
+        .filter_map(
+            |PageProps {
+                 page, name, value, ..
+             }| {
+                if name == "displaytitle" {
+                    // All displaytitles should be UTF-8.
+                    Some((page, String::from_utf8(value).unwrap()))
+                } else {
+                    None
+                }
+            },
+        )
+        .collect::<Map<_, _>>();
+    let title_to_displaytitle = parse_mediawiki_sql::iterate_sql_insertions(&page_sql).fold(
         Map::new(),
         |mut map,
          Page {
-             id,
-             title,
              namespace,
+             title,
+             id,
              ..
          }| {
-            if let Some(categories) = id_to_categories.remove(&id) {
-                map.insert(
-                    namespace_id_to_name.readable_title(&title, &namespace),
-                    categories,
-                );
+            if let Some(displaytitle) = id_to_displaytitle.remove(&id) {
+                if namespaces.is_empty() || namespaces.contains(&namespace.into_inner()) {
+                    map.insert(
+                        namespace_id_to_name.readable_title(&title, &namespace),
+                        displaytitle,
+                    );
+                }
             }
             map
         },
     );
-    serde_json::to_writer(std::io::stdout(), &page_to_categories).unwrap();
-
-    assert_eq!(
-        category_links
-            .finish()
-            .map(|(input, _)| input.chars().take(4).collect::<String>()),
-        Ok(";\n/*".into())
-    );
-
+    serde_json::to_writer(std::io::stdout(), &title_to_displaytitle).unwrap();
     Ok(())
 }
