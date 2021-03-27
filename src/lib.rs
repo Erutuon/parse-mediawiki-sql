@@ -97,7 +97,7 @@ yielding structs representing the database rows.
 */
 pub fn iterate_sql_insertions<'a, T>(
     sql: &'a [u8],
-) -> ParserIterator<&'a [u8], Error<'a>, impl Fn(&'a [u8]) -> IResult<'a, T>>
+) -> ParserIterator<&'a [u8], Error<'a>, impl FnMut(&'a [u8]) -> IResult<'a, T>>
 where
     T: FromSqlTuple<'a> + 'a,
 {

@@ -16,7 +16,7 @@ name = "parse_mediawiki_sql"
 bstr = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 joinery = "2.0.0"
-nom = "5.1"
+nom = "6.1.2"
 ordered-float = "2.0"
 
 [dev-dependencies]

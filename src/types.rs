@@ -13,7 +13,7 @@ use nom::{
     bytes::streaming::{escaped_transform, is_not, tag},
     character::streaming::{char, digit1, one_of},
     combinator::{map, map_res, opt, recognize},
-    error::{context, ErrorKind, ParseError},
+    error::{context, ContextError, ErrorKind, FromExternalError, ParseError},
     multi::many1,
     number::streaming::recognize_float,
     sequence::{delimited, pair, preceded, terminated, tuple},
@@ -126,9 +126,7 @@ impl<'a> ParseError<&'a [u8]> for Error<'a> {
     fn or(self, other: Self) -> Self {
         match self {
             Error::ErrorKind { .. } => match other {
-                Error::ErrorKind { input, kind } => {
-                    Self::from_error_kind(input, kind)
-                }
+                Error::ErrorKind { input, kind } => Self::from_error_kind(input, kind),
                 e @ Error::ErrorWithContexts(_) => e,
             },
             Error::ErrorWithContexts(mut contexts) => match other {
@@ -145,7 +143,9 @@ impl<'a> ParseError<&'a [u8]> for Error<'a> {
             },
         }
     }
+}
 
+impl<'a> ContextError<&'a [u8]> for Error<'a> {
     fn add_context(input: &'a [u8], label: &'static str, other: Self) -> Self {
         let context = ParseTypeContext::Single {
             input: input.into(),
@@ -158,6 +158,12 @@ impl<'a> ParseError<&'a [u8]> for Error<'a> {
                 Self::ErrorWithContexts(contexts)
             }
         }
+    }
+}
+
+impl<'a, I: Into<&'a [u8]>, E> FromExternalError<I, E> for Error<'a> {
+    fn from_external_error(input: I, kind: ErrorKind, _e: E) -> Self {
+        Self::from_error_kind(input.into(), kind)
     }
 }
 
@@ -217,18 +223,10 @@ impl<'a> Display for Error<'a> {
                     [first, rest @ ..] => {
                         let mut last_input = match first {
                             ParseTypeContext::Single { input, label } => {
-                                write!(
-                                    f,
-                                    "expected {} at\n\t{}\n",
-                                    label,
-                                    show_input(input),
-                                )?;
+                                write!(f, "expected {} at\n\t{}\n", label, show_input(input),)?;
                                 input
                             }
-                            ParseTypeContext::Alternatives {
-                                input,
-                                labels,
-                            } => {
+                            ParseTypeContext::Alternatives { input, labels } => {
                                 write!(
                                     f,
                                     "expected {} at \n\t{}\n",
@@ -240,38 +238,27 @@ impl<'a> Display for Error<'a> {
                         };
                         for context in rest {
                             let labels_joined;
-                            let (displayed_label, input): (&dyn Display, _) =
-                                match context {
-                                    ParseTypeContext::Single {
-                                        input,
-                                        label,
-                                    } => {
-                                        let displayed_input =
-                                            if last_input == input {
-                                                None
-                                            } else {
-                                                Some(input)
-                                            };
-                                        last_input = input;
-                                        (label, displayed_input)
-                                    }
-                                    ParseTypeContext::Alternatives {
-                                        input,
-                                        labels,
-                                    } => {
-                                        let displayed_input =
-                                            if last_input == input {
-                                                None
-                                            } else {
-                                                Some(input)
-                                            };
-                                        labels_joined = labels
-                                            .into_iter()
-                                            .join_with(" or ");
-                                        last_input = input;
-                                        (&labels_joined, displayed_input)
-                                    }
-                                };
+                            let (displayed_label, input): (&dyn Display, _) = match context {
+                                ParseTypeContext::Single { input, label } => {
+                                    let displayed_input = if last_input == input {
+                                        None
+                                    } else {
+                                        Some(input)
+                                    };
+                                    last_input = input;
+                                    (label, displayed_input)
+                                }
+                                ParseTypeContext::Alternatives { input, labels } => {
+                                    let displayed_input = if last_input == input {
+                                        None
+                                    } else {
+                                        Some(input)
+                                    };
+                                    labels_joined = labels.into_iter().join_with(" or ");
+                                    last_input = input;
+                                    (&labels_joined, displayed_input)
+                                }
+                            };
                             write!(f, "while parsing {}", displayed_label,)?;
                             if let Some(input) = input {
                                 write!(f, " at\n\t{}", show_input(input),)?;
@@ -302,10 +289,7 @@ macro_rules! number_impl {
                     concat!("number (", stringify!($type_name), ")"),
                     map($implementation, |num: &[u8]| {
                         std::str::from_utf8(num)
-                            .expect(concat!(
-                                "valid UTF-8 in ",
-                                stringify!($type_name)
-                            ))
+                            .expect(concat!("valid UTF-8 in ", stringify!($type_name)))
                             .parse()
                             .expect(concat!("valid ", stringify!($type_name)))
                     }),
@@ -371,9 +355,7 @@ impl<'a> FromSql<'a> for &'a [u8] {
             preceded(
                 tag(B("'")),
                 terminated(
-                    map(opt(is_not(B("'"))), |opt| {
-                        opt.unwrap_or_else(|| B(""))
-                    }),
+                    map(opt(is_not(B("'"))), |opt| opt.unwrap_or_else(|| B(""))),
                     tag(B("'")),
                 ),
             ),
@@ -388,8 +370,7 @@ impl<'a> FromSql<'a> for &'a str {
         context(
             "string with no escape sequences",
             map(<&[u8]>::from_sql, |bytes| {
-                std::str::from_utf8(bytes)
-                    .expect("valid UTF-8 in unescaped string")
+                std::str::from_utf8(bytes).expect("valid UTF-8 in unescaped string")
             }),
         )(s)
     }
@@ -402,8 +383,7 @@ impl<'a> FromSql<'a> for String {
         context(
             "string",
             map(<Vec<u8>>::from_sql, |s| {
-                String::from_utf8(s)
-                    .expect("valid UTF-8 in potentially escaped string")
+                String::from_utf8(s).expect("valid UTF-8 in potentially escaped string")
             }),
         )(s)
     }
@@ -423,7 +403,7 @@ impl<'a> FromSql<'a> for Vec<u8> {
                         opt(escaped_transform(
                             is_not(B("\\\"'")),
                             '\\',
-                            |s: &[u8]| {
+                            |s: &'a [u8]| {
                                 map(one_of(B(r#"\n0btnrZ\'""#)), |b| match b {
                                     '0' => B("\0"),
                                     'b' => b"\x08",
@@ -800,10 +780,7 @@ impl<'input> FromSql<'input> for Expiry {
             "Expiry",
             alt((
                 map(Timestamp::from_sql, Expiry::Timestamp),
-                context(
-                    "“infinity”",
-                    map(tag("'infinity'"), |_| Expiry::Infinity),
-                ),
+                context("“infinity”", map(tag("'infinity'"), |_| Expiry::Infinity)),
             )),
         )(s)
     }
@@ -948,9 +925,7 @@ The example given is nonsensical because `autoconfirmed` is a subset of
 `page_restrictions` strings in this format, but perhaps another wiki does.
 */
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct PageRestrictionsOld<'a>(
-    BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>,
-);
+pub struct PageRestrictionsOld<'a>(BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>);
 
 impl<'a> PageRestrictionsOld<'a> {
     pub fn len(&self) -> usize {
@@ -961,10 +936,7 @@ impl<'a> PageRestrictionsOld<'a> {
         self.len() == 0
     }
 
-    pub fn iter(
-        &self,
-    ) -> impl Iterator<Item = (&PageAction<'a>, &Vec<ProtectionLevel<'a>>)>
-    {
+    pub fn iter(&self) -> impl Iterator<Item = (&PageAction<'a>, &Vec<ProtectionLevel<'a>>)> {
         self.0.iter()
     }
 }
@@ -977,12 +949,8 @@ impl<'a> Index<PageAction<'a>> for PageRestrictionsOld<'a> {
     }
 }
 
-impl<'a> FromIterator<(PageAction<'a>, Vec<ProtectionLevel<'a>>)>
-    for PageRestrictionsOld<'a>
-{
-    fn from_iter<
-        I: IntoIterator<Item = (PageAction<'a>, Vec<ProtectionLevel<'a>>)>,
-    >(
+impl<'a> FromIterator<(PageAction<'a>, Vec<ProtectionLevel<'a>>)> for PageRestrictionsOld<'a> {
+    fn from_iter<I: IntoIterator<Item = (PageAction<'a>, Vec<ProtectionLevel<'a>>)>>(
         iter: I,
     ) -> Self {
         PageRestrictionsOld(iter.into_iter().collect())
@@ -999,8 +967,7 @@ impl<'a> FromSql<'a> for PageRestrictionsOld<'a> {
                         .split(':')
                         .filter(|p| !p.is_empty())
                         .map(|restriction| -> Result<_, &'static str> {
-                            let mut type_and_levels =
-                                restriction.rsplitn(2, '=');
+                            let mut type_and_levels = restriction.rsplitn(2, '=');
                             let level = type_and_levels
                                 .next()
                                 .ok_or("expected page restriction level")?
