@@ -26,6 +26,9 @@ use crate::{
     FromSqlTuple,
 };
 
+#[cfg(feature = "serialization")]
+use serde::{Serialize, Deserialize};
+
 macro_rules! mediawiki_link {
     (
         $text:expr,
@@ -91,6 +94,7 @@ macro_rules! impl_row_from_sql {
         with_doc_comment! {
             database_table_doc!($table_name $(, $page)?),
             #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+            #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
             pub struct $output_type {
                 $(
                     $(#[$field_meta])*
@@ -148,8 +152,12 @@ macro_rules! impl_row_from_sql {
         with_doc_comment! {
             database_table_doc!($table_name $(, $page)?),
             #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+            #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
             pub struct $output_type<$life> {
-                $($(#[$field_meta])* pub $field_name: $type_name),+
+                $(
+                    $(#[$field_meta])*
+                    pub $field_name: $type_name
+                ),+
             }
 
             impl<$life> FromSqlTuple<$life> for $output_type<$life> {
@@ -273,8 +281,11 @@ impl_row_from_sql! {
         height: i32,
         metadata: String,
         bits: i32,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         media_type: MediaType<'input>,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         major_mime: MajorMime<'input>,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         minor_mime: MinorMime<'input>,
         description_id: CommentId,
         actor: ActorId,
@@ -296,6 +307,7 @@ impl_row_from_sql! {
     iwlinks
     InterwikiLinks<'input> {
         from: PageId,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         prefix: &'input str,
         title: PageTitle,
     }
@@ -305,6 +317,7 @@ impl_row_from_sql! {
     langlinks
     LangLinks<'input> {
         from: PageId,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         lang: &'input str,
         title: FullPageTitle,
     }
@@ -314,7 +327,9 @@ impl_row_from_sql! {
     page_restrictions
     PageRestrictions<'input> {
         page: PageId,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         r#type: PageAction<'input>,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         level: ProtectionLevel<'input>,
         cascade: bool,
         user: Option<u32>,
@@ -329,15 +344,19 @@ impl_row_from_sql! {
         id: PageId,
         namespace: PageNamespace,
         title: PageTitle,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         restrictions: PageRestrictionsOld<'input>,
         is_redirect: bool,
         is_new: bool,
+        #[cfg_attr(feature = "serialization", serde(serialize_with = "crate::types::serialize_not_nan", deserialize_with = "crate::types::deserialize_not_nan"))]
         random: NotNan<f64>,
         touched: Timestamp,
         links_updated: Option<Timestamp>,
         latest: u32,
         len: u32,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         content_model: Option<ContentModel<'input>>,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         lang: Option<&'input str>,
     }
 }
@@ -356,8 +375,10 @@ impl_row_from_sql! {
     page_props
     PageProps<'input> {
         page: PageId,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         name: &'input str,
         value: Vec<u8>,
+        #[cfg_attr(feature = "serialization", serde(serialize_with = "crate::types::serialize_option_not_nan", deserialize_with = "crate::types::deserialize_option_not_nan"))]
         sortkey: Option<NotNan<f64>>,
     }
 }
@@ -371,6 +392,7 @@ impl_row_from_sql! {
         reason_id: CommentId,
         timestamp: Timestamp,
         expiry: Expiry,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         create_perm: ProtectionLevel<'input>,
     }
 }
@@ -381,6 +403,7 @@ impl_row_from_sql! {
         from: PageId,
         namespace: PageNamespace,
         title: PageTitle,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         interwiki: Option<&'input str>,
         fragment: Option<String>,
     }
@@ -390,12 +413,19 @@ impl_row_from_sql! {
     sites
     Site<'input> {
         id: u32,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         global_key: &'input str,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         r#type: &'input str,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         group: &'input str,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         source: &'input str,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         language: &'input str,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         protocol: &'input str,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         domain: &'input [u8],
         data: String,
         forward: i8,
@@ -420,7 +450,9 @@ impl_row_from_sql! {
     wbc_entity_usage: "Wikibase/Schema/wbc_entity_usage"
     WikibaseClientEntityUsage<'input> {
         row_id: u64,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         entity_id: &'input str,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         aspect: &'input str,
         page_id: PageId,
     }
@@ -429,10 +461,11 @@ impl_row_from_sql! {
 #[test]
 fn test_redirect() {
     use bstr::B;
-    let item = r"(605368,1,'разблюто','','Discussion from Stephen G. Brown\'s talk-page')";
+    let tuple = r"(605368,1,'разблюто','','Discussion from Stephen G. Brown\'s talk-page')";
+    let redirect = Redirect::from_sql_tuple(tuple.as_bytes());
     assert_eq!(
-        Redirect::from_sql_tuple(item.as_bytes()),
-        Ok((
+        &redirect,
+        &Ok((
             B(""),
             Redirect {
                 from: PageId::from(605368),
@@ -445,6 +478,11 @@ fn test_redirect() {
             }
         ))
     );
+    #[cfg(feature = "serialization")]
+    assert_eq!(
+        serde_json::to_string(&redirect.unwrap().1).unwrap(),
+        r#"{"from":605368,"namespace":1,"title":"разблюто","interwiki":"","fragment":"Discussion from Stephen G. Brown's talk-page"}"#,
+    )
 }
 
 impl_row_from_sql! {
@@ -461,6 +499,7 @@ impl_row_from_sql! {
     user_former_groups
     UserFormerGroups<'input> {
         user: UserId,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         group: UserGroup<'input>,
     }
 }
@@ -469,6 +508,7 @@ impl_row_from_sql! {
     user_groups
     UserGroups<'input> {
         user: UserId,
+        #[cfg_attr(feature = "serialization", serde(borrow))]
         group: UserGroup<'input>,
         expiry: Option<Expiry>,
     }

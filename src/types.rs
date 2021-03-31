@@ -25,7 +25,11 @@ use std::{
     fmt::Display,
     iter::FromIterator,
     ops::{Deref, Index},
+    str::FromStr,
 };
+
+#[cfg(feature = "serialization")]
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// The type that [`Timestamp`] derefs to, from `chrono`.
 pub use chrono::NaiveDateTime;
@@ -347,6 +351,45 @@ macro_rules! float {
 float!(f32);
 float!(f64);
 
+#[cfg(feature = "serialization")]
+pub(crate) fn serialize_not_nan<S>(not_nan: &NotNan<f64>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_f64(not_nan.into_inner())
+}
+
+#[cfg(feature = "serialization")]
+pub(crate) fn deserialize_not_nan<'de, D>(deserializer: D) -> Result<NotNan<f64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    NotNan::new(f64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+}
+
+#[cfg(feature = "serialization")]
+pub(crate) fn serialize_option_not_nan<S>(
+    not_nan: &Option<NotNan<f64>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    not_nan.map(|n| n.into_inner()).serialize(serializer)
+}
+
+#[cfg(feature = "serialization")]
+pub(crate) fn deserialize_option_not_nan<'de, D>(
+    deserializer: D,
+) -> Result<Option<NotNan<f64>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(<Option<f64>>::deserialize(deserializer)?
+        .map(|v| NotNan::new(v).map_err(serde::de::Error::custom))
+        .transpose()?)
+}
+
 /// Use this for byte strings that have no escape sequences.
 impl<'a> FromSql<'a> for &'a [u8] {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
@@ -458,6 +501,7 @@ macro_rules! impl_wrapper {
         impl_wrapper! {
             @maybe_copy [&$l2 $wrapped_type]
             $(#[$attrib])*
+            #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
             pub struct $wrapper<$l1>(&$l2 $wrapped_type);
 
             impl<$l1> FromSql<$l1> for $wrapper<$l1> {
@@ -496,6 +540,7 @@ macro_rules! impl_wrapper {
         impl_wrapper! {
             @maybe_copy [$wrapped]
             $(#[$attrib])*
+            #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
             pub struct $wrapper($wrapped);
 
             impl<'input> FromSql<'input> for $wrapper {
@@ -739,6 +784,7 @@ fn test_copy_for_wrappers() {
 /// [`NaiveDateTime`] through
 /// [`Deref`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
 pub struct Timestamp(NaiveDateTime);
 
 impl<'input> FromSql<'input> for Timestamp {
@@ -746,11 +792,14 @@ impl<'input> FromSql<'input> for Timestamp {
         context(
             "Timestamp in yyyymmddhhmmss or yyyy-mm-dd hh:mm::ss format",
             map_res(<&str>::from_sql, |s| {
-                if s.len() == 14 {
-                    NaiveDateTime::parse_from_str(s, "%Y%m%d%H%M%S")
-                } else {
-                    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
-                }
+                NaiveDateTime::parse_from_str(
+                    s,
+                    if s.len() == 14 {
+                        "%Y%m%d%H%M%S"
+                    } else {
+                        "%Y-%m-%d %H:%M:%S"
+                    },
+                )
                 .map(Timestamp)
             }),
         )(s)
@@ -769,9 +818,34 @@ impl Deref for Timestamp {
 /// [`pr_expiry`](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table#pr_expiry)
 /// field of the `page_restrictions` table.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(Serialize, Deserialize),
+    serde(try_from = "&str", into = "String")
+)]
 pub enum Expiry {
     Timestamp(Timestamp),
     Infinity,
+}
+
+impl TryFrom<&str> for Expiry {
+    type Error = <NaiveDateTime as FromStr>::Err;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s {
+            "infinity" => Ok(Expiry::Infinity),
+            s => Ok(Expiry::Timestamp(Timestamp(s.parse()?))),
+        }
+    }
+}
+
+impl From<Expiry> for String {
+    fn from(e: Expiry) -> Self {
+        match e {
+            Expiry::Timestamp(t) => t.to_string(),
+            Expiry::Infinity => "infinity".to_string(),
+        }
+    }
 }
 
 impl<'input> FromSql<'input> for Expiry {
@@ -786,10 +860,41 @@ impl<'input> FromSql<'input> for Expiry {
     }
 }
 
+// #[cfg(feature = "serialization")]
+// impl Serialize for Expiry {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         match self {
+//             Expiry::Timestamp(timestamp) => timestamp.serialize(serializer),
+//             Expiry::Infinity => timestamp.serialize_str("infinity"),
+//         }
+//     }
+// }
+
+// #[cfg(feature = "serialization")]
+// impl<'de> Deserialize<'de> for Expiry {
+//     fn deserialize<D>(deserializer: D) -> Result<Expiry, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         match deserializer.deserialize_str(I32Visitor)? {
+//             "infinity" => Ok(Expiry::Infinity),
+//             s => Ok(Timestamp::from_str(s)?),
+//         }
+//     }
+// }
+
 /// Represents the
 /// [`cl_type`](https://www.mediawiki.org/wiki/Manual:Categorylinks_table#cl_type)
 /// field of the `categorylinks` table.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(Serialize, Deserialize),
+    serde(try_from = "&str", into = "&'static str")
+)]
 pub enum PageType {
     Page,
     Subcat,
@@ -811,6 +916,17 @@ impl<'a> TryFrom<&'a str> for PageType {
     }
 }
 
+impl From<PageType> for &'static str {
+    fn from(s: PageType) -> &'static str {
+        use PageType::*;
+        match s {
+            Page => "page",
+            Subcat => "subcat",
+            File => "file",
+        }
+    }
+}
+
 impl<'a> FromSql<'a> for PageType {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context("PageType", map_res(<&str>::from_sql, PageType::try_from))(s)
@@ -821,6 +937,11 @@ impl<'a> FromSql<'a> for PageType {
 /// [`pr_type`](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table#pr_type)
 /// field of the `page_restrictions` table, the action that is restricted.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(Serialize, Deserialize),
+    serde(from = "&'a str", into = "&'a str")
+)]
 pub enum PageAction<'a> {
     Edit,
     Move,
@@ -843,6 +964,20 @@ impl<'a> From<&'a str> for PageAction<'a> {
     }
 }
 
+impl<'a> From<PageAction<'a>> for &'a str {
+    fn from(p: PageAction<'a>) -> Self {
+        use PageAction::*;
+        match p {
+            Edit => "edit",
+            Move => "move",
+            Reply => "reply",
+            Upload => "upload",
+            All => "all",
+            Other(s) => s,
+        }
+    }
+}
+
 impl<'a> FromSql<'a> for PageAction<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         map(<&str>::from_sql, PageAction::from)(s)
@@ -854,6 +989,11 @@ impl<'a> FromSql<'a> for PageAction<'a> {
 /// field of the `page_restrictions` table, the group that is allowed
 /// to perform the action.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(Serialize, Deserialize),
+    serde(from = "&'a str", into = "&'a str")
+)]
 pub enum ProtectionLevel<'a> {
     Autoconfirmed,
     ExtendedConfirmed,
@@ -878,6 +1018,22 @@ impl<'a> From<&'a str> for ProtectionLevel<'a> {
             "editsemiprotected" => EditSemiProtected,
             "" => None,
             _ => Other(s),
+        }
+    }
+}
+
+impl<'a> From<ProtectionLevel<'a>> for &'a str {
+    fn from(p: ProtectionLevel<'a>) -> &'a str {
+        use ProtectionLevel::*;
+        match p {
+            Autoconfirmed => "autoconfirmed",
+            ExtendedConfirmed => "extendedconfirmed",
+            TemplateEditor => "templateeditor",
+            Sysop => "sysop",
+            EditProtected => "editprotected",
+            EditSemiProtected => "editsemiprotected",
+            None => "",
+            Other(s) => s,
         }
     }
 }
@@ -927,7 +1083,18 @@ format, but perhaps these types of protection strings have existed in the past
 or exist now on other wikis.
 */
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct PageRestrictionsOld<'a>(BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>);
+#[cfg_attr(
+    feature = "serialization",
+    derive(Serialize, Deserialize),
+    serde(
+        from = "BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>",
+        into = "BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>"
+    )
+)]
+pub struct PageRestrictionsOld<'a>(
+    #[cfg_attr(feature = "serialization", serde(borrow))]
+    BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>,
+);
 
 impl<'a> PageRestrictionsOld<'a> {
     pub fn len(&self) -> usize {
@@ -956,6 +1123,18 @@ impl<'a> FromIterator<(PageAction<'a>, Vec<ProtectionLevel<'a>>)> for PageRestri
         iter: I,
     ) -> Self {
         PageRestrictionsOld(iter.into_iter().collect())
+    }
+}
+
+impl<'a> From<BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>> for PageRestrictionsOld<'a> {
+    fn from(map: BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>) -> Self {
+        Self(map)
+    }
+}
+
+impl<'a> From<PageRestrictionsOld<'a>> for BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>> {
+    fn from(PageRestrictionsOld(map): PageRestrictionsOld<'a>) -> Self {
+        map
     }
 }
 
@@ -1025,6 +1204,11 @@ fn test_page_restrictions() {
 /// [`page_content_model`](https://www.mediawiki.org/wiki/Manual:Page_table#page_content_model)
 /// field of the `page` table.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(Serialize, Deserialize),
+    serde(from = "&'a str", into = "&'a str")
+)]
 pub enum ContentModel<'a> {
     Wikitext,
     Scribunto,
@@ -1033,6 +1217,7 @@ pub enum ContentModel<'a> {
     SanitizedCSS,
     JavaScript,
     JSON,
+    #[cfg_attr(feature = "serialization", serde(borrow))]
     Other(&'a str),
 }
 
@@ -1052,6 +1237,22 @@ impl<'a> From<&'a str> for ContentModel<'a> {
     }
 }
 
+impl<'a> From<ContentModel<'a>> for &'a str {
+    fn from(c: ContentModel<'a>) -> Self {
+        use ContentModel::*;
+        match c {
+            Wikitext => "wikitext",
+            Scribunto => "Scribunto",
+            Text => "text",
+            CSS => "css",
+            SanitizedCSS => "sanitized-css",
+            JavaScript => "javascript",
+            JSON => "json",
+            Other(s) => s,
+        }
+    }
+}
+
 impl<'a> FromSql<'a> for ContentModel<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context("ContentModel", map(<&str>::from_sql, ContentModel::from))(s)
@@ -1062,6 +1263,11 @@ impl<'a> FromSql<'a> for ContentModel<'a> {
 /// [`img_media_type`](https://www.mediawiki.org/wiki/Manual:Image_table#img_media_type)
 /// field of the `image` table.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(Serialize, Deserialize),
+    serde(from = "&'a str", into = "&'a str")
+)]
 pub enum MediaType<'a> {
     Unknown,
     Bitmap,
@@ -1074,6 +1280,7 @@ pub enum MediaType<'a> {
     Executable,
     Archive,
     ThreeDimensional,
+    #[cfg_attr(feature = "serialization", serde(borrow))]
     Other(&'a str),
 }
 
@@ -1097,6 +1304,26 @@ impl<'a> From<&'a str> for MediaType<'a> {
     }
 }
 
+impl<'a> From<MediaType<'a>> for &'a str {
+    fn from(s: MediaType<'a>) -> Self {
+        use MediaType::*;
+        match s {
+            Unknown => "UNKNOWN",
+            Bitmap => "BITMAP",
+            Drawing => "DRAWING",
+            Audio => "AUDIO",
+            Video => "VIDEO",
+            Multimedia => "MULTIMEDIA",
+            Office => "OFFICE",
+            Text => "TEXT",
+            Executable => "EXECUTABLE",
+            Archive => "ARCHIVE",
+            ThreeDimensional => "3D",
+            Other(s) => s,
+        }
+    }
+}
+
 impl<'a> FromSql<'a> for MediaType<'a> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context("MediaType", map(<&str>::from_sql, MediaType::from))(s)
@@ -1107,6 +1334,11 @@ impl<'a> FromSql<'a> for MediaType<'a> {
 /// [`img_major_mime`](https://www.mediawiki.org/wiki/Manual:Image_table#img_major_mime)
 /// field of the `image` table.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(
+    feature = "serialization",
+    derive(Serialize, Deserialize),
+    serde(from = "&'a str", into = "&'a str")
+)]
 pub enum MajorMime<'a> {
     Unknown,
     Application,
@@ -1117,6 +1349,7 @@ pub enum MajorMime<'a> {
     Message,
     Model,
     Multipart,
+    #[cfg_attr(feature = "serialization", serde(borrow))]
     Other(&'a str),
 }
 
@@ -1134,6 +1367,24 @@ impl<'a> From<&'a str> for MajorMime<'a> {
             "model" => Model,
             "multipart" => Multipart,
             _ => Other(s),
+        }
+    }
+}
+
+impl<'a> From<MajorMime<'a>> for &'a str {
+    fn from(s: MajorMime<'a>) -> Self {
+        use MajorMime::*;
+        match s {
+            Unknown => "unknown",
+            Application => "application",
+            Audio => "audio",
+            Image => "image",
+            Text => "text",
+            Video => "video",
+            Message => "message",
+            Model => "model",
+            Multipart => "multipart",
+            Other(s) => s,
         }
     }
 }

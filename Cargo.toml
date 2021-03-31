@@ -9,6 +9,9 @@ repository = "https://github.com/Erutuon/parse-mediawiki-sql"
 readme = "README.md"
 edition = "2018"
 
+[package.metadata.docs.rs]
+features = ["serialization"]
+
 [lib]
 name = "parse_mediawiki_sql"
 
@@ -18,6 +21,12 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 joinery = "2.0.0"
 nom = "6.1.2"
 ordered-float = "2.0"
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+# Can rename this to serde when namespaced features are stabilized:
+# https://doc.rust-lang.org/nightly/cargo/reference/unstable.html#namespaced-features
+serialization = ["serde", "chrono/serde"]
 
 [dev-dependencies]
 anyhow = "1.0.32"
