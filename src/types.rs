@@ -230,7 +230,7 @@ impl<'a> Display for Error<'a> {
                                 write!(
                                     f,
                                     "expected {} at \n\t{}\n",
-                                    labels.into_iter().join_with(" or "),
+                                    labels.iter().join_with(" or "),
                                     show_input(input),
                                 )?;
                                 input
@@ -254,7 +254,7 @@ impl<'a> Display for Error<'a> {
                                     } else {
                                         Some(input)
                                     };
-                                    labels_joined = labels.into_iter().join_with(" or ");
+                                    labels_joined = labels.iter().join_with(" or ");
                                     last_input = input;
                                     (&labels_joined, displayed_input)
                                 }
@@ -263,7 +263,7 @@ impl<'a> Display for Error<'a> {
                             if let Some(input) = input {
                                 write!(f, " at\n\t{}", show_input(input),)?;
                             }
-                            write!(f, "\n")?;
+                            writeln!(f)?;
                         }
                     }
                 }
@@ -353,10 +353,10 @@ impl<'a> FromSql<'a> for &'a [u8] {
         context(
             "byte string with no escape sequences",
             preceded(
-                tag(B("'")),
+                tag("'"),
                 terminated(
                     map(opt(is_not(B("'"))), |opt| opt.unwrap_or_else(|| B(""))),
-                    tag(B("'")),
+                    tag("'"),
                 ),
             ),
         )(s)
@@ -397,7 +397,7 @@ impl<'a> FromSql<'a> for Vec<u8> {
         context(
             "byte string",
             preceded(
-                tag(B("'")),
+                tag("'"),
                 terminated(
                     map(
                         opt(escaped_transform(
@@ -421,7 +421,7 @@ impl<'a> FromSql<'a> for Vec<u8> {
                         )),
                         |opt| opt.unwrap_or_else(Vec::new),
                     ),
-                    tag(B("'")),
+                    tag("'"),
                 ),
             ),
         )(s)
@@ -913,16 +913,18 @@ level: "autoconfirmed" | "templateeditor" | "sysop" | ""
 action: "edit" | "move" | "upload"
 ```
 However, `spec` is treated as having the following format, because the
-MediaWiki documentation for the `page` table
-[gives](https://www.mediawiki.org/wiki/Manual:Page_table#page_restrictions)
-the example `edit=autoconfirmed,sysop:move=sysop` with multiple protection
-levels per action:
+documentation for this field gives the example
+`edit=autoconfirmed,sysop:move=sysop` with multiple protection levels per
+action:
+```txt
+spec: action "=" level ("," level)*
+```
 
-`spec`: `action "=" level ("," level)*`
-
-The example given is nonsensical because `autoconfirmed` is a subset of
-`sysop`, and neither English Wikipedia nor English Wiktionary have any
-`page_restrictions` strings in this format, but perhaps another wiki does.
+The example given is nonsensical because users in the `sysop` group have
+all the rights of users in the `autoconfirmed` group, and neither English
+Wikipedia nor English Wiktionary have any `page_restrictions` strings in this
+format, but perhaps these types of protection strings have existed in the past
+or exist now on other wikis.
 */
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct PageRestrictionsOld<'a>(BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>);
@@ -1071,8 +1073,7 @@ pub enum MediaType<'a> {
     Text,
     Executable,
     Archive,
-    /// Unfortunately a variant name cannot begin with a number.
-    ThreeD,
+    ThreeDimensional,
     Other(&'a str),
 }
 
@@ -1090,7 +1091,7 @@ impl<'a> From<&'a str> for MediaType<'a> {
             "TEXT" => Text,
             "EXECUTABLE" => Executable,
             "ARCHIVE" => Archive,
-            "3D" => ThreeD,
+            "3D" => ThreeDimensional,
             _ => Other(s),
         }
     }
