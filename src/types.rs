@@ -176,9 +176,12 @@ const INPUT_GRAPHEMES_TO_SHOW: usize = 100;
 impl<'a> Display for Error<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fn show_input(input: &BStr) -> &BStr {
-            // Try to display the whole SQL tuple.
-            if input.get(0) == Some(&b'(') {
-                let row = recognize(delimited(
+            if input.is_empty() {
+                return input;
+            }
+            // Try to get a whole SQL tuple.
+            if input[0] == b'(' {
+                if let Ok((_, row)) = recognize(delimited(
                     char('('),
                     many1(pair(
                         alt((
@@ -190,26 +193,29 @@ impl<'a> Display for Error<'a> {
                         opt(char(',')),
                     )),
                     char(')'),
-                ))(input);
-
-                if let Ok((_, row)) = row {
+                ))(input)
+                {
                     return row.into();
                 }
             }
-            alt((
+            // Try to get one element of the SQL tuple.
+            if let Ok((_, result)) = alt((
                 tag("NULL"),
                 recognize(f64::from_sql),
                 recognize(i64::from_sql),
                 recognize(<Vec<u8>>::from_sql),
             ))(input)
-            .map(|(_, result)| result.into())
-            .unwrap_or_else(|_| {
-                input
+            {
+                result.into()
+            // Get up to a maximum number of characters.
+            } else {
+                let (_, end, _) = input
                     .grapheme_indices()
-                    .nth(INPUT_GRAPHEMES_TO_SHOW)
-                    .map(|(_, end, _)| &input[..end])
-                    .unwrap_or(input)
-            })
+                    .take(INPUT_GRAPHEMES_TO_SHOW)
+                    .last()
+                    .expect("we have checked that input is not empty");
+                &input[..end]
+            }
         }
 
         match self {
