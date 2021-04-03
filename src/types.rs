@@ -452,21 +452,18 @@ impl<'a> FromSql<'a> for Vec<u8> {
                         opt(escaped_transform(
                             is_not(B("\\\"'")),
                             '\\',
-                            |s: &'a [u8]| {
-                                map(one_of(B(r#"\n0btnrZ\'""#)), |b| match b {
-                                    '0' => B("\0"),
-                                    'b' => b"\x08",
-                                    't' => b"\t",
-                                    'n' => b"\n",
-                                    'r' => b"\r",
-                                    'Z' => b"\x1A",
-                                    '\\' => b"\\",
-                                    '\'' => b"'",
-                                    '"' => b"\"",
-                                    '\n' => b"\n",
-                                    _ => unreachable!(),
-                                })(s)
-                            },
+                            map(one_of(B(r#"0btnrZ\'""#)), |b| match b {
+                                '0' => B("\0"),
+                                'b' => b"\x08",
+                                't' => b"\t",
+                                'n' => b"\n",
+                                'r' => b"\r",
+                                'Z' => b"\x1A",
+                                '\\' => b"\\",
+                                '\'' => b"'",
+                                '"' => b"\"",
+                                _ => unreachable!(),
+                            }),
                         )),
                         |opt| opt.unwrap_or_else(Vec::new),
                     ),
