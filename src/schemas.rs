@@ -29,6 +29,9 @@ use crate::{
 #[cfg(feature = "serialization")]
 use serde::{Serialize, Deserialize};
 
+#[cfg(feature = "smartstring")]
+use smartstring::alias::String as String;
+
 macro_rules! mediawiki_link {
     (
         $text:expr,

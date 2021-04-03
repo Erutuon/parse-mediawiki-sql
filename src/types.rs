@@ -31,6 +31,12 @@ use std::{
 #[cfg(feature = "serialization")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+#[cfg(feature = "smartstring")]
+use smartstring::alias::String;
+
+#[cfg(feature = "smartstring")]
+use std::string::String as StdString;
+
 /// The type that [`Timestamp`] derefs to, from `chrono`.
 pub use chrono::NaiveDateTime;
 
@@ -432,7 +438,17 @@ impl<'a> FromSql<'a> for String {
         context(
             "string",
             map(<Vec<u8>>::from_sql, |s| {
-                String::from_utf8(s).expect("valid UTF-8 in potentially escaped string")
+                #[cfg(not(feature = "smartstring"))]
+                {
+                    String::from_utf8(s).expect("valid UTF-8 in potentially escaped string")
+                }
+
+                #[cfg(feature = "smartstring")]
+                {
+                    String::from(
+                        StdString::from_utf8(s).expect("valid UTF-8 in potentially escaped string"),
+                    )
+                }
             }),
         )(s)
     }
@@ -845,8 +861,8 @@ impl TryFrom<&str> for Expiry {
 impl From<Expiry> for String {
     fn from(e: Expiry) -> Self {
         match e {
-            Expiry::Timestamp(t) => t.to_string(),
-            Expiry::Infinity => "infinity".to_string(),
+            Expiry::Timestamp(t) => t.to_string().into(),
+            Expiry::Infinity => String::from("infinity"),
         }
     }
 }

@@ -10,7 +10,7 @@ readme = "README.md"
 edition = "2018"
 
 [package.metadata.docs.rs]
-features = ["serialization"]
+features = ["serialization", "smartstring"]
 
 [lib]
 name = "parse_mediawiki_sql"
@@ -22,6 +22,7 @@ joinery = "2.0.0"
 nom = "6.1.2"
 ordered-float = "2.0"
 serde = { version = "1", features = ["derive"], optional = true }
+smartstring = { version = "0.2.5", features = ["serde"], optional = true }
 
 [features]
 # Can rename this to serde when namespaced features are stabilized:
