@@ -1,15 +1,6 @@
-use memmap::Mmap;
-use parse_mediawiki_sql::{FromSqlTuple, iterate_sql_insertions};
-use std::{fs::File, path::{PathBuf, Path}};
 use joinery::Joinable;
-
-unsafe fn memory_map(path: &Path) -> Mmap {
-    Mmap::map(
-        &File::open(path)
-            .unwrap_or_else(|e| panic!("Failed to open {}: {}", &path.display(), e)),
-    )
-    .unwrap_or_else(|e| panic!("Failed to memory-map {}: {}", &path.display(), e))
-}
+use parse_mediawiki_sql::{iterate_sql_insertions, utils::memory_map, FromSqlTuple};
+use std::path::PathBuf;
 
 fn print_row_count<'a, T: FromSqlTuple<'a> + 'a>(sql_script: &'a [u8]) {
     let mut iter = iterate_sql_insertions::<'a, T>(sql_script);
@@ -18,16 +9,14 @@ fn print_row_count<'a, T: FromSqlTuple<'a> + 'a>(sql_script: &'a [u8]) {
         Ok(_) => {
             println!("{} rows parsed", count);
         }
-        Err(e) => {
-            match e {
-                nom::Err::Incomplete(_) => {
-                    eprintln!("Needed more data");
-                }
-                nom::Err::Error(e) | nom::Err::Failure(e) => {
-                    eprintln!("{}", e);
-                }
+        Err(e) => match e {
+            nom::Err::Incomplete(_) => {
+                eprintln!("Needed more data");
             }
-        }
+            nom::Err::Error(e) | nom::Err::Failure(e) => {
+                eprintln!("{}", e);
+            }
+        },
     }
 }
 
@@ -41,7 +30,7 @@ macro_rules! do_with_table {
                 $(,)?
             }
         >(&$script:ident)
-        
+
     ) => {
         use parse_mediawiki_sql::schemas::*;
         match $table_name {
@@ -65,35 +54,34 @@ macro_rules! do_with_table {
     }
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let mut args = std::env::args_os().skip(1);
     let args = (args.next().map(PathBuf::from), args.next());
     let (sql_path, table) = match &args {
         (Some(sql_path), Some(table)) => {
             if let Some(table) = table.to_str() {
                 (sql_path, table)
-
             } else {
                 eprintln!("expected SQL table name (second argument) to be valid UTF-8");
                 std::process::exit(1);
             }
-        },
+        }
         (Some(sql_path), None) => {
             if let Some(table) = sql_path.file_stem().and_then(|s| s.to_str()) {
                 (sql_path, table)
             } else {
-                eprintln!("no SQL table name (second argument); expected file stem that is valid UTF-8");
-                std::process::exit(1);
+                return Err(anyhow::Error::msg("no SQL table name (second argument); expected file stem (first argument) to be valid UTF-8"));
             }
-        },
+        }
         (None, None) => {
-            eprintln!("expected path to SQL script as first argument");
-            std::process::exit(1);
-        },
+            return Err(anyhow::Error::msg(
+                "expected path to SQL script as first argument",
+            ));
+        }
         _ => unreachable!("test"),
     };
 
-    let script = unsafe { memory_map(&sql_path) };
+    let script = unsafe { memory_map(&sql_path)? };
 
     do_with_table! {
         print_row_count::<
@@ -122,4 +110,6 @@ fn main() {
             }
         >(&script)
     }
+
+    Ok(())
 }

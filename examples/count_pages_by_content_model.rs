@@ -1,30 +1,27 @@
 use bstr::ByteSlice;
-use memmap::Mmap;
-use std::collections::HashMap;
-use std::fs::File;
+use std::{collections::HashMap, path::PathBuf};
 
 use parse_mediawiki_sql::{
-    iterate_sql_insertions, schemas::Page, types::ContentModel,
+    iterate_sql_insertions, schemas::Page, types::ContentModel, utils::memory_map,
 };
 
-fn main() {
-    let args: Vec<_> = std::env::args().skip(1).take(1).collect();
+fn main() -> anyhow::Result<()> {
+    let mut args = std::env::args_os().skip(1);
     let sql = unsafe {
-        Mmap::map(
-            &File::open(args.get(0).map(String::as_str).unwrap_or("page.sql"))
-                .expect("page.sql not found"),
-        )
-        .expect("could not memory map file")
+        memory_map(
+            &args
+                .next()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| "page.sql".into()),
+        )?
     };
     let mut iterator = iterate_sql_insertions::<Page>(&sql);
-    let counts: HashMap<Option<ContentModel>, usize> = iterator.fold(
-        HashMap::new(),
-        |mut counts, Page { content_model, .. }| {
+    let counts: HashMap<Option<ContentModel>, usize> =
+        iterator.fold(HashMap::new(), |mut counts, Page { content_model, .. }| {
             let entry = counts.entry(content_model).or_insert(0);
             *entry += 1;
             counts
-        },
-    );
+        });
     println!("{:?}", counts);
     assert_eq!(
         iterator
@@ -32,4 +29,5 @@ fn main() {
             .map(|(input, _)| input.chars().take(4).collect::<String>()),
         Ok(";\n/*".into())
     );
+    Ok(())
 }

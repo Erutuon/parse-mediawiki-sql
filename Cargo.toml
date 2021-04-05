@@ -10,7 +10,7 @@ readme = "README.md"
 edition = "2018"
 
 [package.metadata.docs.rs]
-features = ["serialization"]
+features = ["serialization", "utils"]
 
 [lib]
 name = "parse_mediawiki_sql"
@@ -18,23 +18,54 @@ name = "parse_mediawiki_sql"
 [dependencies]
 bstr = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+flate2 = { version = "1.0.17", optional = true }
 joinery = "2.0.0"
+memmap = { version = "0.7", optional = true }
 nom = "6.1.2"
 ordered-float = "2.0"
 serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1.0.57", optional = true }
+thiserror = { version = "1.0.20", optional = true }
 
 [features]
 # Can rename this to serde when namespaced features are stabilized:
 # https://doc.rust-lang.org/nightly/cargo/reference/unstable.html#namespaced-features
 serialization = ["serde", "chrono/serde"]
+utils = ["flate2", "memmap", "serde", "serde_json", "thiserror"]
 
 [dev-dependencies]
 anyhow = "1.0.32"
-flate2 = "1.0.17"
-memmap = "0.7"
+memmap = { version = "0.7" }
 pico-args = "0.3.4"
-serde = { version = "1.0.115", features = ["derive"] }
 serde_json = "1.0.57"
 smartstring = { version = "0.2.5", features = ["serde"] }
 static_assertions = "1.1.0"
-thiserror = "1.0.20"
+
+[[example]]
+name = "categorylinks"
+required-features = ["utils"]
+
+[[example]]
+name = "category_members"
+required-features = ["utils"]
+
+[[example]]
+name = "count_pages_by_content_model"
+required-features = ["utils"]
+
+[[example]]
+name = "count_rows"
+required-features = ["utils"]
+
+[[example]]
+name = "page_props"
+required-features = ["utils"]
+# requires serde::Serialize macro
+
+[[example]]
+name = "redirects_by_namespace"
+required-features = ["utils"]
+
+[[example]]
+name = "template_redirects"
+required-features = ["utils"]

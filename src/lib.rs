@@ -81,6 +81,9 @@ pub use types::{Error, IResult};
 pub mod schemas;
 pub mod types;
 
+#[cfg(feature = "utils")]
+pub mod utils;
+
 /**
 Trait for converting from a SQL tuple to a Rust type,
 which can borrow from the string or not.

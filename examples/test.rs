@@ -1,7 +1,7 @@
 use joinery::prelude::*;
 use parse_mediawiki_sql::{schemas::Page, FromSqlTuple};
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serialization")]
 use serde_json;
 
 fn main() {
@@ -42,7 +42,7 @@ fn main() {
             match Page::from_sql_tuple(bad_page_tuple.as_bytes()) {
                 Ok((_, page)) => {
                     println!("{:?}", &page);
-                    #[cfg(feature = "serde")]
+                    #[cfg(feature = "serialization")]
                     {
                         serde_json::to_writer(std::io::stdout(), &page).unwrap();
                         println!();
