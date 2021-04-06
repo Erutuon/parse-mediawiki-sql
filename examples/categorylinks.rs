@@ -1,8 +1,8 @@
 use anyhow::Result;
 use bstr::ByteSlice;
 use memmap::Mmap;
-use pico_args::{Arguments, Error as PicoArgsError};
-use std::{collections::BTreeMap as Map, path::PathBuf};
+use pico_args::Arguments;
+use std::{collections::BTreeMap as Map, convert::TryFrom, path::PathBuf};
 
 use parse_mediawiki_sql::{
     iterate_sql_insertions,
@@ -10,13 +10,8 @@ use parse_mediawiki_sql::{
     utils::{memory_map, NamespaceMap},
 };
 
-fn opt_path_from_args(
-    args: &mut Arguments,
-    keys: [&'static str; 2],
-) -> Result<Option<PathBuf>> {
-    Ok(args.opt_value_from_os_str(keys, |opt| {
-        Result::<_, PicoArgsError>::Ok(PathBuf::from(opt))
-    })?)
+fn opt_path_from_args(args: &mut Arguments, keys: [&'static str; 2]) -> Result<Option<PathBuf>> {
+    Ok(args.opt_value_from_os_str(keys, |opt| PathBuf::try_from(opt))?)
 }
 
 fn path_from_args_in_dir(

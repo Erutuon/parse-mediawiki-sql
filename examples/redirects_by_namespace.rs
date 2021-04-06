@@ -8,6 +8,7 @@ use parse_mediawiki_sql::{
 use pico_args::{Arguments, Error as PicoArgsError, Keys};
 use std::{
     collections::{BTreeMap as Map, BTreeSet as Set},
+    convert::TryFrom,
     path::PathBuf,
 };
 
@@ -44,10 +45,8 @@ fn get_args() -> Result<Args> {
         keys: impl Into<Keys>,
         default: impl Into<PathBuf>,
     ) -> PathBuf {
-        args.value_from_os_str(keys, |opt| {
-            Result::<_, PicoArgsError>::Ok(PathBuf::from(opt))
-        })
-        .unwrap_or_else(|_| default.into())
+        args.value_from_os_str(keys, |opt| PathBuf::try_from(opt))
+            .unwrap_or_else(|_| default.into())
     }
 
     let page_path = path_from_args(&mut args, ["-p", "--page"], "page.sql");

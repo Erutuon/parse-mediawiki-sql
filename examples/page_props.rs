@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap as Map, path::PathBuf};
+use std::{collections::BTreeMap as Map, convert::TryFrom, path::PathBuf};
 
 use anyhow::Result;
 use memmap::Mmap;
@@ -6,7 +6,7 @@ use parse_mediawiki_sql::{
     schemas::{Page, PageProps},
     utils::{memory_map, NamespaceMap},
 };
-use pico_args::{Arguments, Error as PicoArgsError};
+use pico_args::Arguments;
 use serde::Serialize;
 use smartstring::alias::String as SmartString;
 use thiserror::Error;
@@ -47,9 +47,7 @@ unsafe fn memory_map_from_args_in_dir(
 }
 
 fn opt_path_from_args(args: &mut Arguments, keys: [&'static str; 2]) -> Result<Option<PathBuf>> {
-    Ok(args.opt_value_from_os_str(keys, |opt| {
-        Result::<_, PicoArgsError>::Ok(PathBuf::from(opt))
-    })?)
+    Ok(args.opt_value_from_os_str(keys, |opt| PathBuf::try_from(opt))?)
 }
 
 fn path_from_args_in_dir(
