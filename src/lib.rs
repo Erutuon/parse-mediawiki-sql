@@ -98,6 +98,7 @@ Takes a SQL dump of a MediaWiki database table as bytes
 and yields a struct that is iterable as a mutable reference,
 yielding structs representing the database rows.
 */
+#[must_use = "the return type implements `Iterator` as a mutable reference, and does nothing unless consumed"]
 pub fn iterate_sql_insertions<'a, T>(
     sql: &'a [u8],
 ) -> ParserIterator<&'a [u8], Error<'a>, impl FnMut(&'a [u8]) -> IResult<'a, T>>
