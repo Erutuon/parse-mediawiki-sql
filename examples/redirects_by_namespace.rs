@@ -5,7 +5,7 @@ use parse_mediawiki_sql::{
     types::PageNamespace,
     utils::{memory_map, NamespaceMap},
 };
-use pico_args::{Arguments, Error as PicoArgsError, Keys};
+use pico_args::{Arguments, Keys};
 use std::{
     collections::{BTreeMap as Map, BTreeSet as Set},
     convert::TryFrom,
@@ -57,14 +57,13 @@ fn get_args() -> Result<Args> {
         "siteinfo-namespaces.json",
     );
     let namespaces = args
-        .free()?
+        .finish()
         .into_iter()
-        .map(|n| {
-            n.parse::<i32>().map(PageNamespace::from).map_err(|e| {
-                PicoArgsError::ArgumentParsingFailed {
-                    cause: e.to_string(),
-                }
-            })
+        .map(|os_str| -> Result<PageNamespace, anyhow::Error> {
+            let n = os_str
+                .into_string()
+                .map_err(|_| pico_args::Error::NonUtf8Argument)?;
+            Ok(PageNamespace::from(n.parse::<i32>()?))
         })
         .collect::<Result<Set<_>, _>>()?;
     if namespaces.is_empty() {

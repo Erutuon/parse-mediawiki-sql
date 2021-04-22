@@ -65,8 +65,6 @@ fn main() -> Result<()> {
     )?)?;
     let prefixes: Vec<String> = args.values_from_str(["-P", "--prefix"])?;
 
-    args.finish()?;
-
     let mut category_links = iterate_sql_insertions::<CategoryLink>(&category_links_sql);
     let mut pages = iterate_sql_insertions::<Page>(&page_sql);
     let mut id_to_categories: Map<_, _> = category_links

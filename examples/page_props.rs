@@ -100,6 +100,30 @@ fn count_prop_names(mut args: Arguments) -> Result<()> {
     Ok(())
 }
 
+fn get_namespaces(args: Arguments, namespace_id_to_name: &NamespaceMap) -> Result<Vec<i32>> {
+    Ok(args
+        .finish()
+        .into_iter()
+        .map(|os_str| -> Result<_, anyhow::Error> {
+            let n = os_str
+                .into_string()
+                .map_err(|_| pico_args::Error::NonUtf8Argument)?;
+            Ok(n.parse()
+                .ok()
+                .or_else(|| {
+                    namespace_id_to_name.iter().find_map(|(id, name)| {
+                        if name.as_str() == n.as_str() {
+                            Some(id.into_inner())
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .ok_or(Error::InvalidNamespace(n))?)
+        })
+        .collect::<Result<Vec<i32>, _>>()?)
+}
+
 fn page_prop_maps(mut args: Arguments) -> Result<()> {
     let dump_dir = opt_path_from_args(&mut args, ["-d", "--dump-dir"])?;
     let props_sql = unsafe {
@@ -113,24 +137,7 @@ fn page_prop_maps(mut args: Arguments) -> Result<()> {
         "siteinfo-namespaces.json",
         &dump_dir,
     )?)?;
-    let namespaces = args
-        .free()?
-        .into_iter()
-        .map(|n| {
-            n.parse()
-                .ok()
-                .or_else(|| {
-                    namespace_id_to_name.iter().find_map(|(id, name)| {
-                        if name.as_str() == n.as_str() {
-                            Some(id.into_inner())
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .ok_or(Error::InvalidNamespace(n))
-        })
-        .collect::<Result<Vec<i32>, _>>()?;
+    let namespaces = get_namespaces(args, &namespace_id_to_name)?;
     let mut id_to_props = parse_mediawiki_sql::iterate_sql_insertions(&props_sql).fold(
         Map::new(),
         |mut map,
@@ -181,24 +188,7 @@ pub fn serialize_displaytitles(mut args: Arguments) -> Result<()> {
         "siteinfo-namespaces.json",
         &dump_dir,
     )?)?;
-    let namespaces = args
-        .free()?
-        .into_iter()
-        .map(|n| {
-            n.parse()
-                .ok()
-                .or_else(|| {
-                    namespace_id_to_name.iter().find_map(|(id, name)| {
-                        if name.as_str() == n.as_str() {
-                            Some(id.into_inner())
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .ok_or(Error::InvalidNamespace(n))
-        })
-        .collect::<Result<Vec<i32>, _>>()?;
+    let namespaces = get_namespaces(args, &namespace_id_to_name)?;
     let mut id_to_displaytitle = parse_mediawiki_sql::iterate_sql_insertions(&props_sql)
         .filter_map(
             |PageProperty {
