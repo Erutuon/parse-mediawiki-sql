@@ -16,12 +16,12 @@ use ordered_float::NotNan;
 
 use crate::{
     types::{
-        ActorId, CategoryId, ChangeTagDefId, ChangeTagId, CommentId,
-        ContentModel, Expiry, ExternalLinksId, FromSql,
+        ActorId, CategoryId, ChangeTagDefinitionId, ChangeTagId, CommentId,
+        ContentModel, Expiry, ExternalLinkId, FromSql,
         FullPageTitle, IResult, LogId, MajorMime, MediaType, MinorMime,
-        PageAction, PageCount, PageId, PageNamespace, PageRestrictionsId,
+        PageAction, PageCount, PageId, PageNamespace, PageRestrictionId,
         PageRestrictionsOld, PageTitle, PageType, ProtectionLevel,
-        RecentChangesId, RevisionId, Sha1, Timestamp, UserGroup, UserId,
+        RecentChangeId, RevisionId, Sha1, Timestamp, UserGroup, UserId,
     },
     FromSqlTuple,
 };
@@ -222,7 +222,7 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     categorylinks
-    CategoryLinks {
+    CategoryLink {
         from: PageId,
         to: PageTitle,
         /// Can be truncated in the middle of a UTF-8 sequence,
@@ -243,18 +243,18 @@ impl_row_from_sql! {
     change_tag
     ChangeTag {
         id: ChangeTagId,
-        recent_changes_id: Option<RecentChangesId>,
+        recent_changes_id: Option<RecentChangeId>,
         log_id: Option<LogId>,
         revision_id: Option<RevisionId>,
         params: Option<String>,
-        tag_id: ChangeTagDefId,
+        tag_id: ChangeTagDefinitionId,
     }
 }
 
 impl_row_from_sql! {
     change_tag_def
-    ChangeTagDef {
-        id: ChangeTagDefId,
+    ChangeTagDefinition {
+        id: ChangeTagDefinitionId,
         name: String,
         user_defined: bool,
         count: u64,
@@ -263,8 +263,8 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     externallinks
-    ExternalLinks {
-        id: ExternalLinksId,
+    ExternalLink {
+        id: ExternalLinkId,
         from: PageId,
         to: String,
         index: Vec<u8>,
@@ -296,7 +296,7 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     imagelinks
-    ImageLinks {
+    ImageLink {
         from: PageId,
         to: PageTitle,
         from_namespace: PageNamespace,
@@ -305,7 +305,7 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     iwlinks
-    InterwikiLinks<'input> {
+    InterwikiLink<'input> {
         from: PageId,
         #[cfg_attr(feature = "serialization", serde(borrow))]
         prefix: &'input str,
@@ -315,7 +315,7 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     langlinks
-    LangLinks<'input> {
+    LanguageLink<'input> {
         from: PageId,
         #[cfg_attr(feature = "serialization", serde(borrow))]
         lang: &'input str,
@@ -325,7 +325,8 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     page_restrictions
-    PageRestrictions<'input> {
+    PageRestriction<'input> {
+        id: PageRestrictionId,
         page: PageId,
         #[cfg_attr(feature = "serialization", serde(borrow))]
         r#type: PageAction<'input>,
@@ -334,7 +335,6 @@ impl_row_from_sql! {
         cascade: bool,
         user: Option<u32>,
         expiry: Option<Expiry>,
-        id: PageRestrictionsId,
     }
 }
 
@@ -363,7 +363,7 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     pagelinks
-    PageLinks {
+    PageLink {
         from: PageId,
         namespace: PageNamespace,
         title: PageTitle,
@@ -373,7 +373,7 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     page_props
-    PageProps<'input> {
+    PageProperty<'input> {
         page: PageId,
         #[cfg_attr(feature = "serialization", serde(borrow))]
         name: &'input str,
@@ -385,7 +385,7 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     protected_titles
-    ProtectedTitles<'input> {
+    ProtectedTitle<'input> {
         namespace: PageNamespace,
         title: PageTitle,
         user: UserId,
@@ -487,7 +487,7 @@ fn test_redirect() {
 
 impl_row_from_sql! {
     templatelinks
-    TemplateLinks {
+    TemplateLink {
         from: PageId,
         namespace: PageNamespace,
         title: PageTitle,
@@ -497,7 +497,7 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     user_former_groups
-    UserFormerGroups<'input> {
+    UserFormerGroupMembership<'input> {
         user: UserId,
         #[cfg_attr(feature = "serialization", serde(borrow))]
         group: UserGroup<'input>,
@@ -506,7 +506,7 @@ impl_row_from_sql! {
 
 impl_row_from_sql! {
     user_groups
-    UserGroups<'input> {
+    UserGroupMembership<'input> {
         user: UserId,
         #[cfg_attr(feature = "serialization", serde(borrow))]
         group: UserGroup<'input>,

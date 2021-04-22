@@ -6,7 +6,7 @@ use std::{collections::BTreeMap as Map, convert::TryFrom, path::PathBuf};
 
 use parse_mediawiki_sql::{
     iterate_sql_insertions,
-    schemas::{CategoryLinks, Page},
+    schemas::{CategoryLink, Page},
     utils::{memory_map, NamespaceMap},
 };
 
@@ -67,14 +67,14 @@ fn main() -> Result<()> {
 
     args.finish()?;
 
-    let mut category_links = iterate_sql_insertions::<CategoryLinks>(&category_links_sql);
+    let mut category_links = iterate_sql_insertions::<CategoryLink>(&category_links_sql);
     let mut pages = iterate_sql_insertions::<Page>(&page_sql);
     let mut id_to_categories: Map<_, _> = category_links
-        .filter(|CategoryLinks { to, .. }| {
+        .filter(|CategoryLink { to, .. }| {
             let to: &String = to.into();
             prefixes.iter().any(|prefix| to.starts_with(prefix))
         })
-        .fold(Map::new(), |mut map, CategoryLinks { from, to, .. }| {
+        .fold(Map::new(), |mut map, CategoryLink { from, to, .. }| {
             let entry = map.entry(from).or_insert_with(Vec::new);
             let to: String = to.into_inner();
             entry.push(to);

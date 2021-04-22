@@ -689,7 +689,7 @@ Represents
 [`ctd_id`](https://www.mediawiki.org/wiki/Manual:Change_tag_def_table#ctd_id),
 the primary key of the `change_tag_def` table.
 "]
-    ChangeTagDefId: u32
+    ChangeTagDefinitionId: u32
 }
 
 impl_wrapper! {
@@ -698,7 +698,7 @@ Represents
 [`rc_id`](https://www.mediawiki.org/wiki/Manual:Recentchanges_table#rc_id),
 the primary key of the `recentchanges` table.
 "]
-    RecentChangesId: u32
+    RecentChangeId: u32
 }
 
 impl_wrapper! {
@@ -707,7 +707,7 @@ Represents
 [`el_id`](https://www.mediawiki.org/wiki/Manual:Externallinks_table#el_id),
 the primary key of the `externallinks` table.
 "]
-    ExternalLinksId: u32
+    ExternalLinkId: u32
 }
 
 impl_wrapper! {
@@ -752,7 +752,7 @@ Represents
 [`pr_id`](https://www.mediawiki.org/wiki/Manual:Page_restrictions_table#pr_id),
 the primary key of the `page_restrictions` table.
 "]
-    PageRestrictionsId: u32
+    PageRestrictionId: u32
 }
 
 impl_wrapper! {

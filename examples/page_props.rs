@@ -3,7 +3,7 @@ use std::{collections::BTreeMap as Map, convert::TryFrom, path::PathBuf};
 use anyhow::Result;
 use memmap::Mmap;
 use parse_mediawiki_sql::{
-    schemas::{Page, PageProps},
+    schemas::{Page, PageProperty},
     utils::{memory_map, NamespaceMap},
 };
 use pico_args::Arguments;
@@ -75,7 +75,7 @@ fn count_prop_names(mut args: Arguments) -> Result<()> {
     };
     let name_counts = parse_mediawiki_sql::iterate_sql_insertions(&props_sql).fold(
         Map::new(),
-        |mut map, PageProps { name, value, .. }| {
+        |mut map, PageProperty { name, value, .. }| {
             let utf8 = std::str::from_utf8(&value).is_ok();
             let name = SmartString::from(name);
             let entry = map.entry(name).or_insert((0, 0));
@@ -134,7 +134,7 @@ fn page_prop_maps(mut args: Arguments) -> Result<()> {
     let mut id_to_props = parse_mediawiki_sql::iterate_sql_insertions(&props_sql).fold(
         Map::new(),
         |mut map,
-         PageProps {
+         PageProperty {
              page, name, value, ..
          }| {
             let value = StringOrBytes::from(value);
@@ -201,7 +201,7 @@ pub fn serialize_displaytitles(mut args: Arguments) -> Result<()> {
         .collect::<Result<Vec<i32>, _>>()?;
     let mut id_to_displaytitle = parse_mediawiki_sql::iterate_sql_insertions(&props_sql)
         .filter_map(
-            |PageProps {
+            |PageProperty {
                  page, name, value, ..
              }| {
                 if name == "displaytitle" {
