@@ -1,4 +1,4 @@
-use crate::types::{PageNamespace, PageTitle};
+use crate::field_types::{PageNamespace, PageTitle};
 
 use std::{
     collections::HashMap as Map,

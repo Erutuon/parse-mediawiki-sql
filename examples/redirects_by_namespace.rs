@@ -2,7 +2,7 @@ use anyhow::Result;
 use parse_mediawiki_sql::{
     iterate_sql_insertions,
     schemas::{Page, Redirect},
-    types::PageNamespace,
+    field_types::PageNamespace,
     utils::{memory_map, NamespaceMap},
 };
 use pico_args::{Arguments, Keys};

@@ -79,10 +79,14 @@ use nom::{
     combinator::{iterator, opt, recognize, ParserIterator},
     sequence::{preceded, tuple},
 };
-pub use types::{Error, IResult};
 
 pub mod schemas;
-pub mod types;
+pub mod from_sql;
+pub mod field_types;
+pub mod error;
+
+pub use from_sql::IResult;
+pub use error::Error;
 
 #[cfg(feature = "utils")]
 pub mod utils;

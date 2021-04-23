@@ -1,28 +1,14 @@
 /*!
 Defines the types used in the [`schemas`](crate::schemas) module
-and implements the [`FromSql`] trait for these and other types,
-so that they can be parsed from SQL syntax.
+and implements the [`FromSql`] trait for them.
 Re-exports the [`Datelike`] and [`Timelike`] traits from the [`chrono`] crate,
 which are used by [`Timestamp`].
-*/
+ */
+use nom::{branch::alt, bytes::streaming::tag, combinator::{map, map_res}, error::context};
 
-use bstr::{BStr, ByteSlice, B};
-use joinery::prelude::*;
-use nom::{
-    branch::alt,
-    bytes::streaming::{escaped_transform, is_not, tag},
-    character::streaming::{char, digit1, one_of},
-    combinator::{map, map_res, opt, recognize},
-    error::{context, ContextError, ErrorKind, FromExternalError, ParseError},
-    multi::many1,
-    number::streaming::recognize_float,
-    sequence::{delimited, pair, preceded, terminated, tuple},
-};
-use ordered_float::NotNan;
 use std::{
     collections::BTreeMap,
     convert::TryFrom,
-    fmt::Display,
     iter::FromIterator,
     ops::{Deref, Index},
     str::FromStr,
@@ -31,469 +17,20 @@ use std::{
 #[cfg(feature = "serialization")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+#[cfg(test)]
+use bstr::B;
+
+use crate::from_sql::FromSql;
+use crate::from_sql::IResult;
+
+/// The type used for float fields that are never NaN.
+pub use ordered_float::NotNan;
+
 /// The type that [`Timestamp`] derefs to, from `chrono`.
 pub use chrono::NaiveDateTime;
 
 /// Trait for [`Timestamp`], re-exported from `chrono`.
 pub use chrono::{Datelike, Timelike};
-
-pub type IResult<'a, T> = nom::IResult<&'a [u8], T, Error<'a>>;
-
-/**
-Trait for converting from the SQL syntax for a simple type
-(anything other than a tuple) to a Rust type,
-which can borrow from the string or not.
-Used by [`schemas::FromSqlTuple`][crate::FromSqlTuple].
-*/
-pub trait FromSql<'a>: Sized {
-    fn from_sql(s: &'a [u8]) -> IResult<'a, Self>;
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum ParseTypeContext<'a> {
-    Single {
-        input: &'a BStr,
-        label: &'static str,
-    },
-    Alternatives {
-        input: &'a BStr,
-        labels: Vec<&'static str>,
-    },
-}
-
-impl<'a> ParseTypeContext<'a> {
-    fn push(&mut self, other: Self) {
-        match self {
-            ParseTypeContext::Single { label: label1, .. } => match other {
-                ParseTypeContext::Single {
-                    input,
-                    label: label2,
-                } => {
-                    *self = ParseTypeContext::Alternatives {
-                        input,
-                        labels: vec![label1, label2],
-                    }
-                }
-                ParseTypeContext::Alternatives {
-                    input,
-                    labels: mut labels2,
-                } => {
-                    labels2.insert(0, label1);
-                    *self = ParseTypeContext::Alternatives {
-                        input,
-                        labels: labels2,
-                    }
-                }
-            },
-            ParseTypeContext::Alternatives {
-                labels: labels1, ..
-            } => match other {
-                ParseTypeContext::Single { label: label2, .. } => {
-                    labels1.push(label2);
-                }
-                ParseTypeContext::Alternatives {
-                    labels: labels2, ..
-                } => {
-                    labels1.extend(labels2);
-                }
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Error<'a> {
-    ErrorKind { input: &'a BStr, kind: ErrorKind },
-    ErrorWithContexts(Vec<ParseTypeContext<'a>>),
-}
-
-impl<'a> ParseError<&'a [u8]> for Error<'a> {
-    fn from_error_kind(input: &'a [u8], kind: ErrorKind) -> Self {
-        Self::ErrorKind {
-            input: input.into(),
-            kind,
-        }
-    }
-
-    // Bubble up ErrorWithContext and skip ErrorKind.
-    fn append(input: &'a [u8], kind: ErrorKind, other: Self) -> Self {
-        match other {
-            Self::ErrorKind { .. } => Self::from_error_kind(input, kind),
-            e @ Self::ErrorWithContexts(_) => e,
-        }
-    }
-
-    fn from_char(input: &'a [u8], _: char) -> Self {
-        Self::from_error_kind(input, ErrorKind::Char)
-    }
-
-    fn or(self, other: Self) -> Self {
-        match self {
-            Error::ErrorKind { .. } => match other {
-                Error::ErrorKind { input, kind } => Self::from_error_kind(input, kind),
-                e @ Error::ErrorWithContexts(_) => e,
-            },
-            Error::ErrorWithContexts(mut contexts) => match other {
-                Error::ErrorKind { .. } => Error::ErrorWithContexts(contexts),
-                Error::ErrorWithContexts(mut other_contexts) => {
-                    if let (Some(mut old_context), Some(new_context)) =
-                        (contexts.pop(), other_contexts.pop())
-                    {
-                        old_context.push(new_context);
-                        other_contexts.push(old_context);
-                    };
-                    Error::ErrorWithContexts(other_contexts)
-                }
-            },
-        }
-    }
-}
-
-impl<'a> ContextError<&'a [u8]> for Error<'a> {
-    fn add_context(input: &'a [u8], label: &'static str, other: Self) -> Self {
-        let context = ParseTypeContext::Single {
-            input: input.into(),
-            label,
-        };
-        match other {
-            Self::ErrorKind { .. } => Self::ErrorWithContexts(vec![context]),
-            Self::ErrorWithContexts(mut contexts) => {
-                contexts.push(context);
-                Self::ErrorWithContexts(contexts)
-            }
-        }
-    }
-}
-
-impl<'a, I: Into<&'a [u8]>, E> FromExternalError<I, E> for Error<'a> {
-    fn from_external_error(input: I, kind: ErrorKind, _e: E) -> Self {
-        Self::from_error_kind(input.into(), kind)
-    }
-}
-
-const INPUT_GRAPHEMES_TO_SHOW: usize = 100;
-
-impl<'a> Display for Error<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn show_input(input: &BStr) -> &BStr {
-            if input.is_empty() {
-                return input;
-            }
-            // Try to get a whole SQL tuple.
-            if input[0] == b'(' {
-                if let Ok((_, row)) = recognize(delimited(
-                    char('('),
-                    many1(pair(
-                        alt((
-                            tag("NULL"),
-                            recognize(f64::from_sql),
-                            recognize(i64::from_sql),
-                            recognize(<Vec<u8>>::from_sql),
-                        )),
-                        opt(char(',')),
-                    )),
-                    char(')'),
-                ))(input)
-                {
-                    return row.into();
-                }
-            }
-            // Try to get one element of the SQL tuple.
-            if let Ok((_, result)) = alt((
-                tag("NULL"),
-                recognize(f64::from_sql),
-                recognize(i64::from_sql),
-                recognize(<Vec<u8>>::from_sql),
-            ))(input)
-            {
-                result.into()
-            // Get up to a maximum number of characters.
-            } else {
-                let (_, end, _) = input
-                    .grapheme_indices()
-                    .take(INPUT_GRAPHEMES_TO_SHOW)
-                    .last()
-                    .expect("we have checked that input is not empty");
-                &input[..end]
-            }
-        }
-
-        match self {
-            Error::ErrorKind { input, kind } => write!(
-                f,
-                "error in {} combinator at\n\t{}",
-                kind.description(),
-                show_input(input),
-            ),
-            Error::ErrorWithContexts(contexts) => {
-                match contexts.as_slice() {
-                    [] => {
-                        write!(f, "unknown error")?;
-                    }
-                    [first, rest @ ..] => {
-                        let mut last_input = match first {
-                            ParseTypeContext::Single { input, label } => {
-                                write!(f, "expected {} at\n\t{}\n", label, show_input(input),)?;
-                                input
-                            }
-                            ParseTypeContext::Alternatives { input, labels } => {
-                                write!(
-                                    f,
-                                    "expected {} at \n\t{}\n",
-                                    labels.iter().join_with(" or "),
-                                    show_input(input),
-                                )?;
-                                input
-                            }
-                        };
-                        for context in rest {
-                            let labels_joined;
-                            let (displayed_label, input): (&dyn Display, _) = match context {
-                                ParseTypeContext::Single { input, label } => {
-                                    let displayed_input = if last_input == input {
-                                        None
-                                    } else {
-                                        Some(input)
-                                    };
-                                    last_input = input;
-                                    (label, displayed_input)
-                                }
-                                ParseTypeContext::Alternatives { input, labels } => {
-                                    let displayed_input = if last_input == input {
-                                        None
-                                    } else {
-                                        Some(input)
-                                    };
-                                    labels_joined = labels.iter().join_with(" or ");
-                                    last_input = input;
-                                    (&labels_joined, displayed_input)
-                                }
-                            };
-                            write!(f, "while parsing {}", displayed_label,)?;
-                            if let Some(input) = input {
-                                write!(f, " at\n\t{}", show_input(input),)?;
-                            }
-                            writeln!(f)?;
-                        }
-                    }
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-impl<'a> FromSql<'a> for bool {
-    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        context("1 or 0", map(one_of("01"), |b| b == '1'))(s)
-    }
-}
-
-// This won't panic if the SQL file is valid and the parser is using
-// the correct numeric types.
-macro_rules! number_impl {
-    ($type_name:ty $implementation:block ) => {
-        impl<'a> FromSql<'a> for $type_name {
-            fn from_sql(s: &'a [u8]) -> IResult<'a, $type_name> {
-                context(
-                    concat!("number (", stringify!($type_name), ")"),
-                    map($implementation, |num: &[u8]| {
-                        std::str::from_utf8(num)
-                            .expect(concat!("valid UTF-8 in ", stringify!($type_name)))
-                            .parse()
-                            .expect(concat!("valid ", stringify!($type_name)))
-                    }),
-                )(s)
-            }
-        }
-    };
-    ($type_name:ty $implementation:block $further_processing:block ) => {
-        impl<'a> FromSql<'a> for $type_name {
-            fn from_sql(s: &'a [u8]) -> IResult<'a, $type_name> {
-                context(
-                    concat!("number (", stringify!($type_name), ")"),
-                    map($implementation, $further_processing),
-                )(s)
-            }
-        }
-    };
-}
-
-macro_rules! unsigned_int {
-    ($t:ident) => {
-        number_impl! { $t { recognize(digit1) } }
-    };
-}
-
-unsigned_int!(u8);
-unsigned_int!(u16);
-unsigned_int!(u32);
-unsigned_int!(u64);
-
-macro_rules! signed_int {
-    ($t:ident) => {
-        number_impl! { $t { recognize(tuple((opt(char('-')), digit1))) } }
-    };
-}
-
-signed_int!(i8);
-signed_int!(i16);
-signed_int!(i32);
-signed_int!(i64);
-
-macro_rules! float {
-    ($t:ident) => {
-        number_impl! { $t { recognize_float } }
-        number_impl! {
-            NotNan<$t> {
-                <$t>::from_sql
-            } {
-                |float| NotNan::new(float).expect("non-NaN")
-            }
-        }
-    };
-}
-
-float!(f32);
-float!(f64);
-
-#[cfg(feature = "serialization")]
-pub(crate) fn serialize_not_nan<S>(not_nan: &NotNan<f64>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_f64(not_nan.into_inner())
-}
-
-#[cfg(feature = "serialization")]
-pub(crate) fn deserialize_not_nan<'de, D>(deserializer: D) -> Result<NotNan<f64>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    NotNan::new(f64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
-}
-
-#[cfg(feature = "serialization")]
-pub(crate) fn serialize_option_not_nan<S>(
-    not_nan: &Option<NotNan<f64>>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    not_nan.map(|n| n.into_inner()).serialize(serializer)
-}
-
-#[cfg(feature = "serialization")]
-pub(crate) fn deserialize_option_not_nan<'de, D>(
-    deserializer: D,
-) -> Result<Option<NotNan<f64>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(<Option<f64>>::deserialize(deserializer)?
-        .map(|v| NotNan::new(v).map_err(serde::de::Error::custom))
-        .transpose()?)
-}
-
-/// Use this for byte strings that have no escape sequences.
-impl<'a> FromSql<'a> for &'a [u8] {
-    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        context(
-            "byte string with no escape sequences",
-            preceded(
-                tag("'"),
-                terminated(
-                    map(opt(is_not(B("'"))), |opt| opt.unwrap_or_else(|| B(""))),
-                    tag("'"),
-                ),
-            ),
-        )(s)
-    }
-}
-
-/// Use this for string-like types that have no escape sequences,
-/// like timestamps, which only contain `[0-9: -]`.
-impl<'a> FromSql<'a> for &'a str {
-    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        context(
-            "string with no escape sequences",
-            map(<&[u8]>::from_sql, |bytes| {
-                std::str::from_utf8(bytes).expect("valid UTF-8 in unescaped string")
-            }),
-        )(s)
-    }
-}
-
-/// Use this for string types that require unescaping and are guaranteed
-/// to be valid UTF-8, like page titles.
-impl<'a> FromSql<'a> for String {
-    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        context(
-            "string",
-            map(<Vec<u8>>::from_sql, |s| {
-                String::from_utf8(s).expect("valid UTF-8 in potentially escaped string")
-            }),
-        )(s)
-    }
-}
-
-/// This is used for "strings" that sometimes contain invalid UTF-8, like the
-/// `cl_sortkey` field in the `categorylinks` table, which is truncated to 230
-// bits, sometimes in the middle of a UTF-8 sequence.
-impl<'a> FromSql<'a> for Vec<u8> {
-    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        context(
-            "byte string",
-            preceded(
-                tag("'"),
-                terminated(
-                    map(
-                        opt(escaped_transform(
-                            is_not(B("\\\"'")),
-                            '\\',
-                            map(one_of(B(r#"0btnrZ\'""#)), |b| match b {
-                                '0' => B("\0"),
-                                'b' => b"\x08",
-                                't' => b"\t",
-                                'n' => b"\n",
-                                'r' => b"\r",
-                                'Z' => b"\x1A",
-                                '\\' => b"\\",
-                                '\'' => b"'",
-                                '"' => b"\"",
-                                _ => unreachable!(),
-                            }),
-                        )),
-                        |opt| opt.unwrap_or_else(Vec::new),
-                    ),
-                    tag("'"),
-                ),
-            ),
-        )(s)
-    }
-}
-
-impl<'a> FromSql<'a> for () {
-    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        context("unit type", map(tag("NULL"), |_| ()))(s)
-    }
-}
-
-impl<'a, T> FromSql<'a> for Option<T>
-where
-    T: FromSql<'a>,
-{
-    fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        context(
-            "optional type",
-            alt((
-                context("“NULL”", map(<()>::from_sql, |_| None)),
-                map(T::from_sql, Some),
-            )),
-        )(s)
-    }
-}
 
 macro_rules! impl_wrapper {
     // $l1 and $l2 must be identical.
@@ -1439,4 +976,43 @@ fn test_string() {
     for (s, unescaped) in strings {
         assert_eq!(String::from_sql(s), Ok((B(""), (*unescaped).to_string())));
     }
+}
+
+#[cfg(feature = "serialization")]
+pub(crate) fn serialize_not_nan<S>(not_nan: &NotNan<f64>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_f64(not_nan.into_inner())
+}
+
+#[cfg(feature = "serialization")]
+pub(crate) fn deserialize_not_nan<'de, D>(deserializer: D) -> Result<NotNan<f64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    NotNan::new(f64::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+}
+
+#[cfg(feature = "serialization")]
+pub(crate) fn serialize_option_not_nan<S>(
+    not_nan: &Option<NotNan<f64>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    not_nan.map(|n| n.into_inner()).serialize(serializer)
+}
+
+#[cfg(feature = "serialization")]
+pub(crate) fn deserialize_option_not_nan<'de, D>(
+    deserializer: D,
+) -> Result<Option<NotNan<f64>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(<Option<f64>>::deserialize(deserializer)?
+        .map(|v| NotNan::new(v).map_err(serde::de::Error::custom))
+        .transpose()?)
 }

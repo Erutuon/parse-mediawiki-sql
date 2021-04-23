@@ -2,7 +2,7 @@ use bstr::ByteSlice;
 use std::{collections::HashMap, path::PathBuf};
 
 use parse_mediawiki_sql::{
-    iterate_sql_insertions, schemas::Page, types::ContentModel, utils::memory_map,
+    iterate_sql_insertions, schemas::Page, field_types::ContentModel, utils::memory_map,
 };
 
 fn main() -> anyhow::Result<()> {

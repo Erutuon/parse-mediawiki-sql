@@ -12,13 +12,12 @@ use nom::{
     sequence::{preceded, terminated, tuple},
 };
 
-use ordered_float::NotNan;
-
 use crate::{
-    types::{
+    from_sql::{FromSql, IResult},
+    field_types::{
         ActorId, CategoryId, ChangeTagDefinitionId, ChangeTagId, CommentId,
-        ContentModel, Expiry, ExternalLinkId, FromSql,
-        FullPageTitle, IResult, LogId, MajorMime, MediaType, MinorMime,
+        ContentModel, Expiry, ExternalLinkId,
+        FullPageTitle, LogId, MajorMime, MediaType, MinorMime, NotNan,
         PageAction, PageCount, PageId, PageNamespace, PageRestrictionId,
         PageRestrictionsOld, PageTitle, PageType, ProtectionLevel,
         RecentChangeId, RevisionId, Sha1, Timestamp, UserGroup, UserId,
@@ -348,7 +347,7 @@ impl_row_from_sql! {
         restrictions: PageRestrictionsOld<'input>,
         is_redirect: bool,
         is_new: bool,
-        #[cfg_attr(feature = "serialization", serde(serialize_with = "crate::types::serialize_not_nan", deserialize_with = "crate::types::deserialize_not_nan"))]
+        #[cfg_attr(feature = "serialization", serde(serialize_with = "crate::field_types::serialize_not_nan", deserialize_with = "crate::field_types::deserialize_not_nan"))]
         random: NotNan<f64>,
         touched: Timestamp,
         links_updated: Option<Timestamp>,
@@ -378,7 +377,7 @@ impl_row_from_sql! {
         #[cfg_attr(feature = "serialization", serde(borrow))]
         name: &'input str,
         value: Vec<u8>,
-        #[cfg_attr(feature = "serialization", serde(serialize_with = "crate::types::serialize_option_not_nan", deserialize_with = "crate::types::deserialize_option_not_nan"))]
+        #[cfg_attr(feature = "serialization", serde(serialize_with = "crate::field_types::serialize_option_not_nan", deserialize_with = "crate::field_types::deserialize_option_not_nan"))]
         sortkey: Option<NotNan<f64>>,
     }
 }
