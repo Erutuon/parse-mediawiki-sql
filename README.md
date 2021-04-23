@@ -1,7 +1,8 @@
 # parse-mediawiki-sql
-This is a library for quickly parsing the [SQL files](https://meta.wikimedia.org/wiki/Data_dumps/What%27s_available_for_download) from the [Wikimedia dumps](https://dumps.wikimedia.org/). It is tested with files from the English Wiktionary but may work for other wikis’ dumps as well.
+This is a library for quickly parsing the [SQL files](https://meta.wikimedia.org/wiki/Data_dumps/What%27s_available_for_download) from the [Wikimedia dumps](https://dumps.wikimedia.org/). It is regularly used with some of the files from the English Wiktionary dump, but should work for other wikis’ dumps as well.
 
-[![Crates.io](https://img.shields.io/crates/v/parse-mediawiki-sql.svg)](https://crates.io/crates/parse-mediawiki-sql)
+[![crates.io](https://img.shields.io/crates/v/parse-mediawiki-sql.svg)](https://crates.io/crates/parse-mediawiki-sql)
+[![docs.rs](https://img.shields.io/docsrs/parse-mediawiki-sql)](https://docs.rs/parse-mediawiki-sql)
 
 ## Background
 Wikimedia provides SQL files that can be executed by a database server to create a replica of various MediaWiki [database tables](https://www.mediawiki.org/wiki/Manual:Database_layout). But it is very slow to execute the scripts that create some of the larger tables, and for recurring jobs it is much faster to run a program that extracts information by parsing the scripts. For example, the `template_redirects` example program, which parses all of `page.sql`, takes about 20 seconds, but creating the [`page` table](https://www.mediawiki.org/wiki/Manual:Page_table) by executing `page.sql` with `mariadb` takes much longer, more than an hour the one time I tried it.

@@ -1,4 +1,7 @@
 /*!
+[![crates.io](https://img.shields.io/crates/v/parse-mediawiki-sql.svg)](https://crates.io/crates/parse-mediawiki-sql)
+[![docs.rs](https://img.shields.io/docsrs/parse-mediawiki-sql)](https://docs.rs/parse-mediawiki-sql)
+
 `parse_mediawiki_sql` parses SQL dumps of a MediaWiki database.
 The SQL dumps are scripts that create a database table and insert rows into it.
 The entry point is `iterate_sql_insertions`, which creates an iterable struct
