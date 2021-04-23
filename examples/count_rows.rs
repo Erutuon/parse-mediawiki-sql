@@ -1,20 +1,23 @@
 use joinery::Joinable;
 use parse_mediawiki_sql::{iterate_sql_insertions, utils::memory_map, FromSqlTuple};
-use std::path::PathBuf;
+use std::{fmt::Display, time::{Duration, Instant}};
+use std::{path::PathBuf};
 
 fn print_row_count<'a, T: FromSqlTuple<'a> + 'a>(sql_script: &'a [u8]) {
+    let start = Instant::now();
     let mut iter = iterate_sql_insertions::<'a, T>(sql_script);
     let count = iter.count();
+    let elapsed = DurationPrinter(start.elapsed());
     match iter.finish() {
         Ok(_) => {
-            println!("{} rows parsed", count);
+            println!("{} rows parsed in {}", count, elapsed);
         }
         Err(e) => match e {
             nom::Err::Incomplete(_) => {
-                eprintln!("Needed more data");
+                eprintln!("Needed more data after {} rows were parsed in {}", count, elapsed);
             }
             nom::Err::Error(e) | nom::Err::Failure(e) => {
-                eprintln!("{}", e);
+                eprintln!("Error after parsing {} rows in {}: {}", count, elapsed, e);
             }
         },
     }
@@ -51,6 +54,38 @@ macro_rules! do_with_table {
             }
         }
 
+    }
+}
+
+struct DurationPrinter(Duration);
+
+impl Display for DurationPrinter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut secs = self.0.as_secs();
+        let mins = secs / 60;
+        if mins > 0 {
+            secs %= 60;
+            write!(f, "{}m ", mins)?;
+        }
+        write!(f, "{}.", secs)?;
+        let decimals = format!("{:09}", self.0.subsec_nanos());
+        write!(f, "{}s", {
+            if secs == 0 && mins == 0 {
+                let zero_count = decimals
+                    .as_bytes()
+                    .iter()
+                    .take_while(|&&b| b == b'0')
+                    .count();
+                match zero_count {
+                    0..=2 => &decimals[..3],
+                    3..=5 => &decimals[..6],
+                    _ => &decimals[..9],
+                }
+            } else {
+                &decimals[..3]
+            }
+        })?;
+        Ok(())
     }
 }
 
