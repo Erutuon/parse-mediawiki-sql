@@ -753,10 +753,10 @@ pub enum ContentModel<'a> {
     Wikitext,
     Scribunto,
     Text,
-    CSS,
-    SanitizedCSS,
+    Css,
+    SanitizedCss,
     JavaScript,
-    JSON,
+    Json,
     #[cfg_attr(feature = "serialization", serde(borrow))]
     Other(&'a str),
 }
@@ -768,10 +768,10 @@ impl<'a> From<&'a str> for ContentModel<'a> {
             "wikitext" => Wikitext,
             "Scribunto" => Scribunto,
             "text" => Text,
-            "css" => CSS,
-            "sanitized-css" => SanitizedCSS,
+            "css" => Css,
+            "sanitized-css" => SanitizedCss,
             "javascript" => JavaScript,
-            "json" => JSON,
+            "json" => Json,
             _ => Other(s),
         }
     }
@@ -784,10 +784,10 @@ impl<'a> From<ContentModel<'a>> for &'a str {
             Wikitext => "wikitext",
             Scribunto => "Scribunto",
             Text => "text",
-            CSS => "css",
-            SanitizedCSS => "sanitized-css",
+            Css => "css",
+            SanitizedCss => "sanitized-css",
             JavaScript => "javascript",
-            JSON => "json",
+            Json => "json",
             Other(s) => s,
         }
     }

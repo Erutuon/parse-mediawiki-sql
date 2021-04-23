@@ -104,7 +104,7 @@ impl NamespaceMap {
             .get(&namespace)
             .map(|n| {
                 let mut readable_title = String::new();
-                if n != "" {
+                if !n.is_empty() {
                     write!(readable_title, "{}:", n).unwrap();
                 }
                 for c in title.chars() {
