@@ -467,9 +467,9 @@ fn test_redirect() {
         &Ok((
             B(""),
             Redirect {
-                from: PageId::from(605368),
-                namespace: PageNamespace::from(1),
-                title: PageTitle::from("разблюто".to_string()),
+                from: PageId(605368),
+                namespace: PageNamespace(1),
+                title: PageTitle("разблюто".to_string()),
                 interwiki: Some(""),
                 fragment: Some(
                     "Discussion from Stephen G. Brown's talk-page".to_string()

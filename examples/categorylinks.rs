@@ -5,6 +5,7 @@ use pico_args::Arguments;
 use std::{collections::BTreeMap as Map, convert::TryFrom, path::PathBuf};
 
 use parse_mediawiki_sql::{
+    field_types::PageTitle,
     iterate_sql_insertions,
     schemas::{CategoryLink, Page},
     utils::{memory_map, NamespaceMap},
@@ -68,16 +69,24 @@ fn main() -> Result<()> {
     let mut category_links = iterate_sql_insertions::<CategoryLink>(&category_links_sql);
     let mut pages = iterate_sql_insertions::<Page>(&page_sql);
     let mut id_to_categories: Map<_, _> = category_links
-        .filter(|CategoryLink { to, .. }| {
-            let to: &String = to.into();
-            prefixes.iter().any(|prefix| to.starts_with(prefix))
-        })
-        .fold(Map::new(), |mut map, CategoryLink { from, to, .. }| {
-            let entry = map.entry(from).or_insert_with(Vec::new);
-            let to: String = to.into_inner();
-            entry.push(to);
-            map
-        });
+        .filter(
+            |CategoryLink {
+                 to: PageTitle(category), ..
+             }| { prefixes.iter().any(|prefix| category.starts_with(prefix)) },
+        )
+        .fold(
+            Map::new(),
+            |mut map,
+             CategoryLink {
+                 from,
+                 to: PageTitle(category),
+                 ..
+             }| {
+                let entry = map.entry(from).or_insert_with(Vec::new);
+                entry.push(category);
+                map
+            },
+        );
 
     let page_to_categories = pages.fold(
         Map::new(),

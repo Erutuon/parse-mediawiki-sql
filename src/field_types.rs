@@ -42,7 +42,7 @@ macro_rules! impl_wrapper {
             @maybe_copy [&$l2 $wrapped_type]
             $(#[$attrib])*
             #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
-            pub struct $wrapper<$l1>(&$l2 $wrapped_type);
+            pub struct $wrapper<$l1>(pub &$l2 $wrapped_type);
 
             impl<$l1> FromSql<$l1> for $wrapper<$l1> {
                 fn from_sql(s: &$l1 [u8]) -> IResult<$l1, Self> {
@@ -55,8 +55,8 @@ macro_rules! impl_wrapper {
 
             #[allow(unused)]
             impl<$l1> $wrapper<$l1> {
-                pub fn into_inner(self) -> &$l2 $wrapped_type {
-                    self.into()
+                pub const fn into_inner(self) -> &$l2 $wrapped_type {
+                    self.0
                 }
             }
 
@@ -81,7 +81,7 @@ macro_rules! impl_wrapper {
             @maybe_copy [$wrapped]
             $(#[$attrib])*
             #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
-            pub struct $wrapper($wrapped);
+            pub struct $wrapper(pub $wrapped);
 
             impl<'input> FromSql<'input> for $wrapper {
                 fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
@@ -95,7 +95,7 @@ macro_rules! impl_wrapper {
             #[allow(unused)]
             impl $wrapper {
                 pub fn into_inner(self) -> $wrapped {
-                    self.into()
+                    self.0
                 }
             }
 
@@ -325,7 +325,7 @@ fn test_copy_for_wrappers() {
 /// [`Deref`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
-pub struct Timestamp(NaiveDateTime);
+pub struct Timestamp(pub NaiveDateTime);
 
 impl<'input> FromSql<'input> for Timestamp {
     fn from_sql(s: &'input [u8]) -> IResult<'input, Self> {
@@ -633,7 +633,7 @@ or exist now on other wikis.
 )]
 pub struct PageRestrictionsOld<'a>(
     #[cfg_attr(feature = "serialization", serde(borrow))]
-    BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>,
+    pub BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>,
 );
 
 impl<'a> PageRestrictionsOld<'a> {

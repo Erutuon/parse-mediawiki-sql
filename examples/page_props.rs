@@ -3,6 +3,7 @@ use std::{collections::BTreeMap as Map, convert::TryFrom, path::PathBuf};
 use anyhow::Result;
 use memmap::Mmap;
 use parse_mediawiki_sql::{
+    field_types::PageNamespace,
     schemas::{Page, PageProperty},
     utils::{memory_map, NamespaceMap},
 };
@@ -100,7 +101,10 @@ fn count_prop_names(mut args: Arguments) -> Result<()> {
     Ok(())
 }
 
-fn get_namespaces(args: Arguments, namespace_id_to_name: &NamespaceMap) -> Result<Vec<i32>> {
+fn get_namespaces(
+    args: Arguments,
+    namespace_id_to_name: &NamespaceMap,
+) -> Result<Vec<PageNamespace>> {
     Ok(args
         .finish()
         .into_iter()
@@ -109,11 +113,12 @@ fn get_namespaces(args: Arguments, namespace_id_to_name: &NamespaceMap) -> Resul
                 .into_string()
                 .map_err(|_| pico_args::Error::NonUtf8Argument)?;
             Ok(n.parse()
+                .map(PageNamespace)
                 .ok()
                 .or_else(|| {
-                    namespace_id_to_name.iter().find_map(|(id, name)| {
+                    namespace_id_to_name.iter().find_map(|(&id, name)| {
                         if name.as_str() == n.as_str() {
-                            Some(id.into_inner())
+                            Some(id)
                         } else {
                             None
                         }
@@ -121,7 +126,7 @@ fn get_namespaces(args: Arguments, namespace_id_to_name: &NamespaceMap) -> Resul
                 })
                 .ok_or(Error::InvalidNamespace(n))?)
         })
-        .collect::<Result<Vec<i32>, _>>()?)
+        .collect::<Result<Vec<_>, _>>()?)
 }
 
 fn page_prop_maps(mut args: Arguments) -> Result<()> {
@@ -161,7 +166,7 @@ fn page_prop_maps(mut args: Arguments) -> Result<()> {
              ..
          }| {
             if let Some(props) = id_to_props.remove(&id) {
-                if namespaces.is_empty() || namespaces.contains(&namespace.into_inner()) {
+                if namespaces.is_empty() || namespaces.contains(&namespace) {
                     map.insert(
                         namespace_id_to_name.readable_title(&title, &namespace),
                         props,
@@ -213,7 +218,7 @@ pub fn serialize_displaytitles(mut args: Arguments) -> Result<()> {
              ..
          }| {
             if let Some(displaytitle) = id_to_displaytitle.remove(&id) {
-                if namespaces.is_empty() || namespaces.contains(&namespace.into_inner()) {
+                if namespaces.is_empty() || namespaces.contains(&namespace) {
                     map.insert(
                         namespace_id_to_name.readable_title(&title, &namespace),
                         displaytitle,

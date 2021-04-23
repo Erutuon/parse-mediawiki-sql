@@ -1,8 +1,8 @@
 use anyhow::Result;
 use parse_mediawiki_sql::{
+    field_types::PageNamespace,
     iterate_sql_insertions,
     schemas::{Page, Redirect},
-    field_types::PageNamespace,
     utils::{memory_map, NamespaceMap},
 };
 use pico_args::{Arguments, Keys};
@@ -63,7 +63,7 @@ fn get_args() -> Result<Args> {
             let n = os_str
                 .into_string()
                 .map_err(|_| pico_args::Error::NonUtf8Argument)?;
-            Ok(PageNamespace::from(n.parse::<i32>()?))
+            Ok(PageNamespace(n.parse::<i32>()?))
         })
         .collect::<Result<Set<_>, _>>()?;
     if namespaces.is_empty() {

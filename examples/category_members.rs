@@ -1,5 +1,5 @@
 use anyhow::Result;
-use parse_mediawiki_sql::{schemas::CategoryLink, utils::memory_map};
+use parse_mediawiki_sql::{field_types::PageTitle, schemas::CategoryLink, utils::memory_map};
 use std::{
     collections::{HashMap as Map, HashSet as Set},
     convert::TryFrom,
@@ -22,14 +22,19 @@ fn main() -> Result<()> {
         .collect::<Result<Set<_>>>()?;
     let sql = unsafe { memory_map(&category_links)? };
     let _: Map<_, _> = parse_mediawiki_sql::iterate_sql_insertions(&sql)
-        .filter_map(|CategoryLink { from, to, .. }| {
-            let to = to.into_inner();
-            if categories.contains(&to) {
-                Some((from, to))
-            } else {
-                None
-            }
-        })
+        .filter_map(
+            |CategoryLink {
+                 from,
+                 to: PageTitle(to),
+                 ..
+             }| {
+                if categories.contains(&to) {
+                    Some((from, to))
+                } else {
+                    None
+                }
+            },
+        )
         .collect();
     Ok(())
 }

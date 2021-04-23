@@ -1,8 +1,8 @@
 use bstr::ByteSlice;
 use parse_mediawiki_sql::{
+    field_types::{PageNamespace, PageTitle},
     iterate_sql_insertions,
     schemas::{Page, Redirect},
-    field_types::PageNamespace,
     utils::memory_map,
 };
 use std::{collections::BTreeMap as Map, path::PathBuf};
@@ -28,7 +28,7 @@ fn main() -> anyhow::Result<()> {
         )?
     };
     let mut pages = iterate_sql_insertions::<Page>(&page_sql);
-    let template_namespace = PageNamespace::from(10);
+    let template_namespace = PageNamespace(10);
     // This works if every template redirect in redirect.sql is also marked
     // as a redirect in page.sql.
     let id_to_title: Map<_, _> = pages
@@ -49,10 +49,20 @@ fn main() -> anyhow::Result<()> {
     );
     let mut redirects = iterate_sql_insertions::<Redirect>(&redirect_sql);
     let target_to_sources: Map<_, _> = redirects
-        .filter_map(|Redirect { from, title, .. }| id_to_title.get(&from).map(|from| (from, title)))
-        .fold(Map::new(), |mut map, (from, title)| {
-            let entry = map.entry(title.into_inner()).or_insert_with(Vec::new);
-            entry.push(from.clone().into_inner());
+        .filter_map(
+            |Redirect {
+                 from: source_id,
+                 title: PageTitle(target),
+                 ..
+             }| {
+                id_to_title
+                    .get(&source_id)
+                    .map(|PageTitle(source)| (source, target))
+            },
+        )
+        .fold(Map::new(), |mut map, (source, target)| {
+            let entry = map.entry(target).or_insert_with(Vec::new);
+            entry.push(source.as_str());
             map
         });
     serde_json::to_writer(std::io::stdout(), &target_to_sources).unwrap();

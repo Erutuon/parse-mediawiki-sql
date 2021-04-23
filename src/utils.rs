@@ -93,17 +93,16 @@ impl NamespaceMap {
                 .namespaces
                 .into_iter()
                 .map(|(_, namespace_info)| {
-                    (PageNamespace::from(namespace_info.id), namespace_info.name)
+                    (PageNamespace(namespace_info.id), namespace_info.name)
                 })
                 .collect(),
         ))
     }
 
-    pub fn readable_title(&self, title: &PageTitle, namespace: &PageNamespace) -> String {
+    pub fn readable_title(&self, PageTitle(title): &PageTitle, namespace: &PageNamespace) -> String {
         self.0
             .get(&namespace)
             .map(|n| {
-                let title: &String = title.into();
                 let mut readable_title = String::new();
                 if n != "" {
                     write!(readable_title, "{}:", n).unwrap();
