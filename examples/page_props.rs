@@ -14,11 +14,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 enum Error {
-    #[error("Missing subcommand")]
-    MissingSubcommand,
-    #[error("Invalid subcommand")]
-    InvalidSubcommand,
-    #[error("Invalid namespace: {0}")]
+    #[error("Invalid subcommand: choose {}", .0.join(" or "))]
+    Subcommand(&'static [&'static str]),
+    #[error("Invalid namespace name: {0}")]
     InvalidNamespace(String),
 }
 
@@ -232,15 +230,31 @@ pub fn serialize_displaytitles(mut args: Arguments) -> Result<()> {
     Ok(())
 }
 
+macro_rules! choose_subcommand {
+    (
+        $arg:expr => {
+            $(
+                $subcommand:literal => $function:ident,
+            )+
+        }
+    ) => {
+        match $arg {
+            $(
+                Some($subcommand) => $function,
+            )+
+            _ => return Err(Error::Subcommand(&[ $($subcommand),+ ]).into()),
+        }
+    };
+}
+
 fn main() -> Result<()> {
     let mut args = std::env::args_os().skip(1);
-    let subcommand = args.next().ok_or(Error::MissingSubcommand)?;
+    let subcommand = args.next().and_then(|s| s.into_string().ok());
     let args = Arguments::from_vec(args.collect());
-    match subcommand.to_str().ok_or(Error::InvalidSubcommand)? {
-        "display-titles" => serialize_displaytitles(args),
-        "page-prop-maps" => page_prop_maps(args),
-        "count-prop-names" => count_prop_names(args),
-        _ => Err(Error::InvalidSubcommand)?,
-    }?;
+    choose_subcommand!(subcommand.as_deref() => {
+        "display-titles" => serialize_displaytitles,
+        "page-prop-maps" => page_prop_maps,
+        "count-prop-names" => count_prop_names,
+    })(args)?;
     Ok(())
 }
