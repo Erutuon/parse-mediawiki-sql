@@ -18,6 +18,7 @@ name = "parse_mediawiki_sql"
 [dependencies]
 bstr = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+either = "1.6.1"
 flate2 = { version = "1.0.17", optional = true }
 joinery = "2.0.0"
 memmap = { version = "0.7", optional = true }

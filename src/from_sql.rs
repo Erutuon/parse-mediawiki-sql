@@ -4,11 +4,12 @@ and for [`NotNan`], so that they can be parsed from SQL syntax.
 */
 
 use bstr::B;
+use either::Either;
 use nom::{
     branch::alt,
     bytes::streaming::{escaped_transform, is_not, tag},
     character::streaming::{char, digit1, one_of},
-    combinator::{map, opt, recognize},
+    combinator::{map, map_res, opt, recognize},
     error::context,
     number::streaming::recognize_float,
     sequence::{preceded, terminated, tuple},
@@ -27,7 +28,6 @@ pub trait FromSql<'a>: Sized {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self>;
 }
 
-
 impl<'a> FromSql<'a> for bool {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context("1 or 0", map(one_of("01"), |b| b == '1'))(s)
@@ -42,11 +42,9 @@ macro_rules! number_impl {
             fn from_sql(s: &'a [u8]) -> IResult<'a, $type_name> {
                 context(
                     concat!("number (", stringify!($type_name), ")"),
-                    map($implementation, |num: &[u8]| {
-                        std::str::from_utf8(num)
-                            .expect(concat!("valid UTF-8 in ", stringify!($type_name)))
-                            .parse()
-                            .expect(concat!("valid ", stringify!($type_name)))
+                    map_res($implementation, |num: &[u8]| {
+                        let s = std::str::from_utf8(num).map_err(Either::Right)?;
+                        s.parse().map_err(Either::Left)
                     }),
                 )(s)
             }
@@ -124,9 +122,7 @@ impl<'a> FromSql<'a> for &'a str {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context(
             "string with no escape sequences",
-            map(<&[u8]>::from_sql, |bytes| {
-                std::str::from_utf8(bytes).expect("valid UTF-8 in unescaped string")
-            }),
+            map_res(<&[u8]>::from_sql, |bytes| std::str::from_utf8(bytes)),
         )(s)
     }
 }
@@ -137,9 +133,7 @@ impl<'a> FromSql<'a> for String {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context(
             "string",
-            map(<Vec<u8>>::from_sql, |s| {
-                String::from_utf8(s).expect("valid UTF-8 in potentially escaped string")
-            }),
+            map_res(<Vec<u8>>::from_sql, |s| String::from_utf8(s)),
         )(s)
     }
 }
