@@ -319,10 +319,9 @@ fn test_copy_for_wrappers() {
     assert_impl_all!(UserGroup: Copy);
 }
 
-/// Represents a [timestamp](https://www.mediawiki.org/wiki/Manual:Timestamp)
-/// given as a string in `yyyymmddhhmmss` format. Provides the methods of
-/// [`NaiveDateTime`] through
-/// [`Deref`].
+/// A [timestamp](https://www.mediawiki.org/wiki/Manual:Timestamp),
+/// represented as a string in the format `'yyyymmddhhmmss'` or `'yyyy-mm-dd hh:mm::ss'`.
+/// Provides the methods of [`NaiveDateTime`] through [`Deref`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
 pub struct Timestamp(pub NaiveDateTime);

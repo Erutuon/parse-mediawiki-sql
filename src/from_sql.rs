@@ -28,6 +28,7 @@ pub trait FromSql<'a>: Sized {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self>;
 }
 
+/// Parses a [`bool`] from `1` or `0`.
 impl<'a> FromSql<'a> for bool {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context("1 or 0", map(one_of("01"), |b| b == '1'))(s)
@@ -37,7 +38,12 @@ impl<'a> FromSql<'a> for bool {
 // This won't panic if the SQL file is valid and the parser is using
 // the correct numeric types.
 macro_rules! number_impl {
-    ($type_name:ty $implementation:block ) => {
+    (
+        $( #[doc = $com:expr] )*
+        $type_name:ty
+        $implementation:block
+    ) => {
+        $( #[doc = $com] )*
         impl<'a> FromSql<'a> for $type_name {
             fn from_sql(s: &'a [u8]) -> IResult<'a, $type_name> {
                 context(
@@ -50,7 +56,13 @@ macro_rules! number_impl {
             }
         }
     };
-    ($type_name:ty $implementation:block $further_processing:block ) => {
+    (
+        $( #[doc = $com:expr] )*
+        $type_name:ty
+        $implementation:block
+        $further_processing:block
+    ) => {
+        $( #[doc = $com] )*
         impl<'a> FromSql<'a> for $type_name {
             fn from_sql(s: &'a [u8]) -> IResult<'a, $type_name> {
                 context(
@@ -86,12 +98,21 @@ signed_int!(i64);
 
 macro_rules! float {
     ($t:ident) => {
-        number_impl! { $t { recognize_float } }
         number_impl! {
+            #[doc = concat!("Matches a float literal with [`recognize_float`] and parses it as a [`", stringify!($t), "`].")]
+            $t { recognize_float }
+        }
+
+        number_impl! {
+            // Link to `<$t as FromSql>::from_sql` when https://github.com/rust-lang/rust/issues/74563 is resolved.
+            #[doc = concat!("Parses an [`", stringify!($t), "`] and wraps it with [`NotNan::unchecked_new`].")]
+            ///
+            /// # Safety
+            /// This will never accidentally wrap a `NaN` because `nom`'s [`recognize_float`] doesn't include a representation of `NaN`.
             NotNan<$t> {
                 <$t>::from_sql
             } {
-                |float| NotNan::new(float).expect("non-NaN")
+                |float| unsafe { NotNan::unchecked_new(float) }
             }
         }
     };
@@ -100,7 +121,7 @@ macro_rules! float {
 float!(f32);
 float!(f64);
 
-/// Use this for byte strings that have no escape sequences.
+/// Used for byte strings that have no escape sequences.
 impl<'a> FromSql<'a> for &'a [u8] {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context(
@@ -116,8 +137,9 @@ impl<'a> FromSql<'a> for &'a [u8] {
     }
 }
 
-/// Use this for string-like types that have no escape sequences,
-/// like timestamps, which only contain `[0-9: -]`.
+/// Used for types represented as strings without escape sequences. For instance,
+/// [`Timestamp`](crate::field_types::Timestamp)s matches the regex `^[0-9: -]+$`
+/// and thus never has any escape sequences.
 impl<'a> FromSql<'a> for &'a str {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context(
@@ -138,9 +160,9 @@ impl<'a> FromSql<'a> for String {
     }
 }
 
-/// This is used for "strings" that sometimes contain invalid UTF-8, like the
+/// Used for "strings" that sometimes contain invalid UTF-8, like the
 /// `cl_sortkey` field in the `categorylinks` table, which is truncated to 230
-// bits, sometimes in the middle of a UTF-8 sequence.
+/// bits, sometimes in the middle of a UTF-8 sequence.
 impl<'a> FromSql<'a> for Vec<u8> {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context(
