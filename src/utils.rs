@@ -1,3 +1,8 @@
+/*!
+Defines [`memory_map`] to read decompressed MediaWiki SQL files,
+and [`NamespaceMap`] to display a page title prefixed by its namespace name.
+*/
+
 use crate::field_types::{PageNamespace, PageTitle};
 
 use std::{
@@ -13,11 +18,25 @@ use memmap::Mmap;
 use serde::Deserialize;
 use thiserror::Error;
 
+/**
+Utility function for memory-mapping a SQL file to make it easier to use [`iterate_sql_insertions`](crate::iterate_sql_insertions).
+
+Pass a borrowed memory map to `iterate_sql_insertions` so that the [schema](crate::schemas) struct
+produced by the iterator can borrow from the file's contents.
+See the example in the crate documentation.
+
+Returns an [`Error::Io`], which displays the action that failed as well as the path and the underlying `std::io::Error`.
+
+# Safety
+
+Inherits unsafe annotation from [`Mmap::map`].
+*/
 pub unsafe fn memory_map(path: &Path) -> Result<Mmap, Error> {
     Mmap::map(&File::open(path).map_err(|source| Error::from_io("open file", source, path))?)
         .map_err(|source| Error::from_io("memory map file", source, path))
 }
 
+/// The error type used by [`memory_map`] and [`NamespaceMap`].
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Failed to parse JSON at {}", path.canonicalize().as_ref().unwrap_or(path).display())]
@@ -66,9 +85,12 @@ struct NamespaceInfo {
     canonical_name: Option<String>,
 }
 
+/// Provides a way to convert a namespace and title from `page.sql` to the title displayed on the wiki page.
 pub struct NamespaceMap(Map<PageNamespace, String>);
 
 impl NamespaceMap {
+    /// Creates a `NamespaceMap` by parsing `siteinfo-namespaces.json.gz` or `siteinfo-namespaces.json`
+    /// and converting it into a map from namespace number to local namespace name.
     pub fn from_path(path: &Path) -> Result<Self, Error> {
         let json = if path.extension() == Some("gz".as_ref()) {
             let gz =
@@ -99,6 +121,8 @@ impl NamespaceMap {
         ))
     }
 
+    /// Returns a full title, consisting of the [`PageNamespace`] converted to the local namespace name,
+    /// a colon if needed, and the [`PageTitle`] with underscores replaced with spaces.
     pub fn readable_title(&self, PageTitle(title): &PageTitle, namespace: &PageNamespace) -> String {
         self.0
             .get(&namespace)

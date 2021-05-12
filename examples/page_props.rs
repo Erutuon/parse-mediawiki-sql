@@ -45,6 +45,7 @@ unsafe fn memory_map_from_args_in_dir(
     Ok(memory_map(&path)?)
 }
 
+#[allow(clippy::clippy::redundant_closure)]
 fn opt_path_from_args(args: &mut Arguments, keys: [&'static str; 2]) -> Result<Option<PathBuf>> {
     Ok(args.opt_value_from_os_str(keys, |opt| PathBuf::try_from(opt))?)
 }
@@ -55,7 +56,7 @@ fn path_from_args_in_dir(
     default: &str,
     opt_dir: &Option<PathBuf>,
 ) -> Result<PathBuf> {
-    Ok(opt_path_from_args(args, keys).map(|path| {
+    opt_path_from_args(args, keys).map(|path| {
         let file = path.unwrap_or_else(|| default.into());
         opt_dir
             .clone()
@@ -64,7 +65,7 @@ fn path_from_args_in_dir(
                 dir
             })
             .unwrap_or(file)
-    })?)
+    })
 }
 
 fn count_prop_names(mut args: Arguments) -> Result<()> {
@@ -103,7 +104,7 @@ fn get_namespaces(
     args: Arguments,
     namespace_id_to_name: &NamespaceMap,
 ) -> Result<Vec<PageNamespace>> {
-    Ok(args
+    args
         .finish()
         .into_iter()
         .map(|os_str| -> Result<_, anyhow::Error> {
@@ -124,7 +125,7 @@ fn get_namespaces(
                 })
                 .ok_or(Error::InvalidNamespace(n))?)
         })
-        .collect::<Result<Vec<_>, _>>()?)
+        .collect()
 }
 
 fn page_prop_maps(mut args: Arguments) -> Result<()> {
