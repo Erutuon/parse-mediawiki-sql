@@ -14,6 +14,7 @@ use std::fmt::Display;
 
 use crate::from_sql::FromSql;
 
+/// Used inside [`Error`] to store the names of the items that were being parsed.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ParseTypeContext<'a> {
     Single {
@@ -66,6 +67,10 @@ impl<'a> ParseTypeContext<'a> {
     }
 }
 
+/// Error type used by [`FromSql`].
+///
+/// Keeps a list of the items that were being parsed when an error was encountered.
+/// The [`Display`] implementation prints a backtrace with a snippet of the text that failed to parse.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Error<'a> {
     ErrorKind { input: &'a BStr, kind: ErrorKind },
