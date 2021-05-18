@@ -20,21 +20,20 @@ For example the `Page` struct represents a row in the [`page` table](https://www
 
 The fields borrow from the input if possible. If a `binary` type contains valid UTF-8, it is represented as a `String` or a `&str`, otherwise a `Vec<u8>`. If a `binary` field is valid UTF-8 and will not, barring errors, contain any escapes (such as `\'`), it is parsed into a `&str` that borrows from the input `&[u8]`.
 
-As some of the SQL dump files, such as `page.sql`, can be very large, I recommend using the [`memmap`](https://lib.rs/crates/memmap) crate to avoid reading them completely into memory.
+As some of the SQL dump files, such as `page.sql`, can be very large, I use a convenience function to memory map the file to avoid reading them completely into memory and provide something for the items of the iterator to borrow from. The examples use [`utils::memory_map`] (enabled by the feature `utils`), which uses the [`memmap`](https://lib.rs/crates/memmap) crate, but with a more helpful error type.
 
 ## Example
 To generate a `Vec` containing the titles of all redirect pages:
 
 ```rust
-use memmap::Mmap;
 use parse_mediawiki_sql::{
     iterate_sql_insertions,
     schemas::Page,
     types::{PageNamespace, PageTitle},
+    utils::memory_map,
 };
 use std::fs::File;
-let page_sql =
-    unsafe { Mmap::map(&File::open("page.sql").unwrap()).unwrap() };
+let page_sql = unsafe { memory_map("page.sql")? };
 let redirects: Vec<(PageNamespace, PageTitle)> =
     iterate_sql_insertions(&page_sql)
         .filter_map(

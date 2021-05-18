@@ -28,15 +28,14 @@ extern crate parse_mediawiki_sql;
 To generate a `Vec` containing the titles of all redirect pages:
 
 ```no_run
-use memmap::Mmap;
 use parse_mediawiki_sql::{
     iterate_sql_insertions,
     schemas::Page,
     types::{PageNamespace, PageTitle},
+    utils::memory_map,
 };
 use std::fs::File;
-let page_sql =
-    unsafe { Mmap::map(&File::open("page.sql").unwrap()).unwrap() };
+let page_sql = unsafe { memory_map("page.sql")? };
 let redirects: Vec<(PageNamespace, PageTitle)> =
     iterate_sql_insertions(&page_sql)
         .filter_map(
