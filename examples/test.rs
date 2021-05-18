@@ -1,9 +1,6 @@
 use joinery::prelude::*;
 use parse_mediawiki_sql::{schemas::Page, FromSqlTuple};
 
-#[cfg(feature = "serialization")]
-use serde_json;
-
 fn main() {
     let page_tuple: Vec<&'static str> = concat!(
         "(7,4,'GNU_Free_Documentation_License','',0,0,0.492815242607906,",
@@ -13,7 +10,7 @@ fn main() {
     .unwrap()
     .strip_suffix(")")
     .unwrap()
-    .split(",")
+    .split(',')
     .collect();
     let test = "(7,66.6,'GNU_Free_Documentation_License','',0,0,0.492815242607906,'20200201151554','20200201151623',28863815,2777,'wikitext',NULL)".as_bytes();
     // For some reason the error is reported at `.6` rather than at `66.6` where the parser would see that there is no `'`.

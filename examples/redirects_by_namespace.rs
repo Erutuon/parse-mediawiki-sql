@@ -40,6 +40,7 @@ fn get_args() -> Result<Args> {
         return Ok(Args::Help);
     }
 
+    #[allow(clippy::clippy::redundant_closure)]
     fn path_from_args(
         args: &mut Arguments,
         keys: impl Into<Keys>,

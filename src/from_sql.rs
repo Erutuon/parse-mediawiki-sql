@@ -155,7 +155,7 @@ impl<'a> FromSql<'a> for String {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context(
             "string",
-            map_res(<Vec<u8>>::from_sql, |s| String::from_utf8(s)),
+            map_res(<Vec<u8>>::from_sql, String::from_utf8),
         )(s)
     }
 }

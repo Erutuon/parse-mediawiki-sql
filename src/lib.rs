@@ -79,13 +79,13 @@ use nom::{
     sequence::{preceded, tuple},
 };
 
-pub mod schemas;
-pub mod from_sql;
-pub mod field_types;
 pub mod error;
+pub mod field_types;
+pub mod from_sql;
+pub mod schemas;
 
-pub use from_sql::IResult;
 pub use error::Error;
+pub use from_sql::IResult;
 
 #[cfg(feature = "utils")]
 pub mod utils;

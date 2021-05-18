@@ -1011,7 +1011,7 @@ pub(crate) fn deserialize_option_not_nan<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    Ok(<Option<f64>>::deserialize(deserializer)?
+    <Option<f64>>::deserialize(deserializer)?
         .map(|v| NotNan::new(v).map_err(serde::de::Error::custom))
-        .transpose()?)
+        .transpose()
 }

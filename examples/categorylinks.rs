@@ -11,6 +11,7 @@ use parse_mediawiki_sql::{
     utils::{memory_map, NamespaceMap},
 };
 
+#[allow(clippy::redundant_closure)]
 fn opt_path_from_args(args: &mut Arguments, keys: [&'static str; 2]) -> Result<Option<PathBuf>> {
     Ok(args.opt_value_from_os_str(keys, |opt| PathBuf::try_from(opt))?)
 }
@@ -21,7 +22,7 @@ fn path_from_args_in_dir(
     default: &str,
     opt_dir: &Option<PathBuf>,
 ) -> Result<PathBuf> {
-    Ok(opt_path_from_args(args, keys).map(|path| {
+    opt_path_from_args(args, keys).map(|path| {
         let file = path.unwrap_or_else(|| default.into());
         opt_dir
             .clone()
@@ -30,7 +31,7 @@ fn path_from_args_in_dir(
                 dir
             })
             .unwrap_or(file)
-    })?)
+    })
 }
 
 unsafe fn memory_map_from_args_in_dir(
