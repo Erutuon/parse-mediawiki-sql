@@ -33,12 +33,9 @@ macro_rules! mediawiki_link {
         $text:expr,
         $page:expr $(,)?
     ) => {
-        concat! {"[",
-            $text,
-            "](https://www.mediawiki.org/wiki/",
-            $page,
-            ")"
-        }
+        concat! (
+            "[", $text, "](https://www.mediawiki.org/wiki/", $page, ")"
+        )
     }
 }
 
@@ -56,20 +53,20 @@ macro_rules! database_table_doc {
     (
         $table_name:ident
     ) => {
-        concat! {
-            "Represents the ",
+        concat! (
+            "Represents a row in the ",
             mediawiki_link!(
                 concat!("`", stringify!($table_name), "` table"),
                 concat!("Manual:", stringify!($table_name), "_table"),
             ),
             ".",
-        }
+        )
     };
     (
         $table_name:ident, $page_name:literal
     ) => {
         concat!(
-            "Represents the ",
+            "Represents a row in the ",
             mediawiki_link!(
                 concat!("`", stringify!($table_name), "` table"),
                 $page_name,
