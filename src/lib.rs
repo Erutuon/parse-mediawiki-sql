@@ -70,6 +70,8 @@ for Page { namespace, title, is_redirect, .. } in &mut iterate_sql_insertions(&p
 ```
 */
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 use bstr::{ByteSlice, B};
 use nom::{
     branch::alt,
@@ -86,8 +88,8 @@ pub mod schemas;
 
 pub use error::Error;
 pub use from_sql::IResult;
-
 #[cfg(feature = "utils")]
+#[cfg_attr(docsrs, doc(cfg(feature = "utils")))]
 pub mod utils;
 
 /**
