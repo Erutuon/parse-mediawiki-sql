@@ -11,6 +11,7 @@ edition = "2018"
 
 [package.metadata.docs.rs]
 features = ["serialization", "utils"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
 name = "parse_mediawiki_sql"
