@@ -45,7 +45,7 @@ unsafe fn memory_map_from_args_in_dir(
     Ok(memory_map(&path)?)
 }
 
-#[allow(clippy::clippy::redundant_closure)]
+#[allow(clippy::redundant_closure)]
 fn opt_path_from_args(args: &mut Arguments, keys: [&'static str; 2]) -> Result<Option<PathBuf>> {
     Ok(args.opt_value_from_os_str(keys, |opt| PathBuf::try_from(opt))?)
 }

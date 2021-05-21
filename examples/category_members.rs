@@ -9,7 +9,7 @@ use std::{
 fn main() -> Result<()> {
     let mut args = pico_args::Arguments::from_env();
 
-    #[allow(clippy::clippy::redundant_closure)]
+    #[allow(clippy::redundant_closure)]
     let category_links = args
         .value_from_os_str(["-c", "--category-links"], |opt| PathBuf::try_from(opt))
         .unwrap_or_else(|_| "categorylinks.sql".into());
