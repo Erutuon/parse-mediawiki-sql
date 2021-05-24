@@ -1,6 +1,5 @@
 /*!
-Defines the [`FromSql`] trait and implements it for standard Rust types
-and for [`NotNan`], so that they can be parsed from SQL syntax.
+Defines the [`FromSql`] trait and implements it for external types.
 */
 
 use bstr::B;

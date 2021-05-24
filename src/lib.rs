@@ -100,23 +100,30 @@ pub mod utils;
 /**
 Trait for converting from a SQL tuple to a Rust type,
 which can borrow from the string or not.
-Used by [`iterate_sql_insertions`][crate::iterate_sql_insertions].
+Used by [`iterate_sql_insertions`].
 */
-pub trait FromSqlTuple<'a>: Sized {
-    fn from_sql_tuple(s: &'a [u8]) -> IResult<'a, Self>;
+pub trait FromSqlTuple<'input>: Sized {
+    fn from_sql_tuple(s: &'input [u8]) -> IResult<'input, Self>;
 }
 
 /**
-Takes a SQL dump of a MediaWiki database table as bytes
-and yields a struct that is iterable as a mutable reference,
-yielding structs representing the database rows.
+The entry point of the crate. Takes a SQL dump of a MediaWiki database table as bytes
+and yields an iterator over structs representing rows in the table.
+
+The return value is iterable as a mutable reference,
+and when iterated it yields structs representing the database rows (`Row`).
+These rows are represented as tuples in the SQL code.
+The tuples are parsed using [`FromSqlTuple::from_sql_tuple`]
+and the fields in the tuples are parsed by [`FromSql::from_sql`](from_sql::FromSql::from_sql).
+
+See the [example][crate#example] in the documentation, and see [`schemas`] for the full list of possible `Row`s.
 */
 #[must_use = "the return type implements `Iterator` as a mutable reference, and does nothing unless consumed"]
-pub fn iterate_sql_insertions<'a, T>(
-    sql: &'a [u8],
-) -> ParserIterator<&'a [u8], Error<'a>, impl FnMut(&'a [u8]) -> IResult<'a, T>>
+pub fn iterate_sql_insertions<'input, Row>(
+    sql: &'input [u8],
+) -> ParserIterator<&'input [u8], Error<'input>, impl FnMut(&'input [u8]) -> IResult<'input, Row>>
 where
-    T: FromSqlTuple<'a> + 'a,
+    Row: FromSqlTuple<'input> + 'input,
 {
     let sql = &sql[sql.find("INSERT INTO").expect("INSERT INTO statement")..];
     iterator(

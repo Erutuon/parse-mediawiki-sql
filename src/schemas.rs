@@ -1,8 +1,9 @@
 /*!
-Defines types that represent rows in tables of the
-[MediaWiki database](https://www.mediawiki.org/wiki/Manual:Database_layout)
-and implements the [`FromSqlTuple`] trait for them,
-so that they can be parsed from SQL tuples.
+Types that represent rows in tables of the
+[MediaWiki database](https://www.mediawiki.org/wiki/Manual:Database_layout).
+
+Implements the [`FromSqlTuple`] trait for them,
+so that they can be parsed from SQL tuples by [`iterate_sql_insertions`](crate::iterate_sql_insertions).
 */
 
 use nom::{

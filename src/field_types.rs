@@ -1,6 +1,7 @@
 /*!
-Defines the types used in the [`schemas`](crate::schemas) module
-and implements the [`FromSql`] trait for them.
+The types used in the [`schemas`](crate::schemas) module.
+
+Implements the [`FromSql`] trait for them.
 Re-exports the [`Datelike`] and [`Timelike`] traits from the [`chrono`] crate,
 which are used by [`Timestamp`].
  */

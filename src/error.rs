@@ -1,3 +1,7 @@
+/*!
+The error types used by [`FromSqlTuple`](crate::FromSqlTuple) and [`FromSql`](crate::from_sql::FromSql).
+*/
+
 use bstr::{BStr, ByteSlice};
 use joinery::prelude::*;
 use nom::{
@@ -67,7 +71,7 @@ impl<'a> ParseTypeContext<'a> {
     }
 }
 
-/// Error type used by [`FromSql`].
+/// Error type used by [`FromSql`](crate::from_sql::FromSql).
 ///
 /// Keeps a list of the items that were being parsed when an error was encountered.
 /// The [`Display`] implementation prints a backtrace with a snippet of the text that failed to parse.
