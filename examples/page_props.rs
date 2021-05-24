@@ -107,7 +107,7 @@ fn get_namespaces(
     args
         .finish()
         .into_iter()
-        .map(|os_str| -> Result<_, anyhow::Error> {
+        .map(|os_str| -> Result<_> {
             let n = os_str
                 .into_string()
                 .map_err(|_| pico_args::Error::NonUtf8Argument)?;
@@ -115,13 +115,7 @@ fn get_namespaces(
                 .map(PageNamespace)
                 .ok()
                 .or_else(|| {
-                    namespace_id_to_name.iter().find_map(|(&id, name)| {
-                        if name.as_str() == n.as_str() {
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    })
+                    namespace_id_to_name.id(&n)
                 })
                 .ok_or(Error::InvalidNamespace(n))?)
         })

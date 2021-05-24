@@ -28,6 +28,7 @@ ordered-float = "2.0"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1.0.64", optional = true }
 thiserror = { version = "1.0.24", optional = true }
+unicase = "2.6.0"
 
 [features]
 # Can rename this to serde when namespaced features are stabilized:
