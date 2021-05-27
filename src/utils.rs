@@ -14,10 +14,11 @@ use std::{
 };
 
 use flate2::read::GzDecoder;
-use memmap::Mmap;
 use serde::Deserialize;
 use thiserror::Error;
 use unicase::UniCase;
+
+pub use memmap2::Mmap;
 
 /**
 Memory-maps a file, returning a useful message in case of error.

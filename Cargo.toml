@@ -22,7 +22,7 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 either = "1.6.1"
 flate2 = { version = "1.0.20", optional = true }
 joinery = "2.0.0"
-memmap = { version = "0.7", optional = true }
+memmap2 = { version = "0.2", optional = true }
 nom = "6.1.2"
 ordered-float = "2.0"
 serde = { version = "1", features = ["derive"], optional = true }
@@ -34,7 +34,7 @@ unicase = "2.6.0"
 # Can rename this to serde when namespaced features are stabilized:
 # https://doc.rust-lang.org/nightly/cargo/reference/unstable.html#namespaced-features
 serialization = ["serde", "chrono/serde"]
-utils = ["flate2", "memmap", "serde", "serde_json", "thiserror"]
+utils = ["flate2", "memmap2", "serde", "serde_json", "thiserror"]
 
 [dev-dependencies]
 anyhow = "1.0.32"

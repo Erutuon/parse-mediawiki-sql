@@ -1,6 +1,5 @@
 use anyhow::Result;
 use bstr::ByteSlice;
-use memmap::Mmap;
 use pico_args::Arguments;
 use std::{collections::BTreeMap as Map, convert::TryFrom, path::PathBuf};
 
@@ -8,7 +7,7 @@ use parse_mediawiki_sql::{
     field_types::PageTitle,
     iterate_sql_insertions,
     schemas::{CategoryLink, Page},
-    utils::{memory_map, NamespaceMap},
+    utils::{memory_map, Mmap, NamespaceMap},
 };
 
 #[allow(clippy::redundant_closure)]
@@ -72,7 +71,8 @@ fn main() -> Result<()> {
     let mut id_to_categories: Map<_, _> = category_links
         .filter(
             |CategoryLink {
-                 to: PageTitle(category), ..
+                 to: PageTitle(category),
+                 ..
              }| { prefixes.iter().any(|prefix| category.starts_with(prefix)) },
         )
         .fold(

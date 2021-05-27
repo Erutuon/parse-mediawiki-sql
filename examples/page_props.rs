@@ -1,11 +1,10 @@
 use std::{collections::BTreeMap as Map, convert::TryFrom, path::PathBuf};
 
 use anyhow::Result;
-use memmap::Mmap;
 use parse_mediawiki_sql::{
     field_types::PageNamespace,
     schemas::{Page, PageProperty},
-    utils::{memory_map, NamespaceMap},
+    utils::{memory_map, Mmap, NamespaceMap},
 };
 use pico_args::Arguments;
 use serde::Serialize;
@@ -104,8 +103,7 @@ fn get_namespaces(
     args: Arguments,
     namespace_id_to_name: &NamespaceMap,
 ) -> Result<Vec<PageNamespace>> {
-    args
-        .finish()
+    args.finish()
         .into_iter()
         .map(|os_str| -> Result<_> {
             let n = os_str
@@ -114,9 +112,7 @@ fn get_namespaces(
             Ok(n.parse()
                 .map(PageNamespace)
                 .ok()
-                .or_else(|| {
-                    namespace_id_to_name.id(&n)
-                })
+                .or_else(|| namespace_id_to_name.id(&n))
                 .ok_or(Error::InvalidNamespace(n))?)
         })
         .collect()
