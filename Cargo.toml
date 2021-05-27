@@ -24,7 +24,7 @@ flate2 = { version = "1.0.20", optional = true }
 joinery = "2.0.0"
 memmap2 = { version = "0.2", optional = true }
 nom = "6.1.2"
-ordered-float = "2.0"
+ordered-float = "2.5"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1.0.64", optional = true }
 thiserror = { version = "1.0.24", optional = true }

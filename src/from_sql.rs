@@ -104,14 +104,14 @@ macro_rules! float {
 
         number_impl! {
             // Link to `<$t as FromSql>::from_sql` when https://github.com/rust-lang/rust/issues/74563 is resolved.
-            #[doc = concat!("Parses an [`", stringify!($t), "`] and wraps it with [`NotNan::unchecked_new`].")]
+            #[doc = concat!("Parses an [`", stringify!($t), "`] and wraps it with [`NotNan::new_unchecked`].")]
             ///
             /// # Safety
             /// This will never accidentally wrap a `NaN` because `nom`'s [`recognize_float`] doesn't include a representation of `NaN`.
             NotNan<$t> {
                 <$t>::from_sql
             } {
-                |float| unsafe { NotNan::unchecked_new(float) }
+                |float| unsafe { NotNan::new_unchecked(float) }
             }
         }
     };
