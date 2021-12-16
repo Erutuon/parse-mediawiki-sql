@@ -1,5 +1,9 @@
 use anyhow::Result;
-use parse_mediawiki_sql::{field_types::PageTitle, schemas::CategoryLink, utils::memory_map};
+use parse_mediawiki_sql::{
+    field_types::PageTitle,
+    schemas::{CategoryLink, Page},
+    utils::{memory_map, NamespaceMap},
+};
 use std::{
     collections::{HashMap as Map, HashSet as Set},
     convert::TryFrom,
@@ -10,10 +14,18 @@ fn main() -> Result<()> {
     let mut args = pico_args::Arguments::from_env();
 
     #[allow(clippy::redundant_closure)]
-    let category_links = args
-        .value_from_os_str(["-c", "--category-links"], |opt| PathBuf::try_from(opt))
-        .unwrap_or_else(|_| "categorylinks.sql".into());
-    let sql = unsafe { memory_map(&category_links)? };
+    let mut get_arg = |keys: [&'static str; 2], default: &'static str| {
+        args.value_from_os_str(keys, |opt| PathBuf::try_from(opt))
+            .unwrap_or_else(|_| default.into())
+    };
+
+    let category_links_path = get_arg(["-c", "--category-links"], "categorylinks.sql");
+    let page_path = get_arg(["-p", "--page"], "page.sql");
+    let siteinfo_namespaces_path = get_arg(["-S", "--siteinfo-namespaces"], "siteinfo-namespaces.json");
+    let category_links_sql = unsafe { memory_map(&category_links_path)? };
+    let page_sql = unsafe { memory_map(&page_path)? };
+
+    let namespaces = NamespaceMap::from_path(&siteinfo_namespaces_path)?;
 
     let categories = args
         .finish()
@@ -25,20 +37,55 @@ fn main() -> Result<()> {
         })
         .collect::<Result<Set<_>>>()?;
 
-    let _: Map<_, _> = parse_mediawiki_sql::iterate_sql_insertions(&sql)
+    let category_members: Map<_, _> =
+        parse_mediawiki_sql::iterate_sql_insertions(&category_links_sql)
+            .filter_map(
+                |CategoryLink {
+                     from,
+                     to: PageTitle(to),
+                     ..
+                 }| {
+                    if categories.contains(&to) {
+                        Some((from, to))
+                    } else {
+                        None
+                    }
+                },
+            )
+            .fold(Map::new(), |mut a, (page, category)| {
+                a.entry(page).or_insert_with(Vec::new).push(category);
+                a
+            });
+    let mut pages: Map<_, _> = parse_mediawiki_sql::iterate_sql_insertions(&page_sql)
         .filter_map(
-            |CategoryLink {
-                 from,
-                 to: PageTitle(to),
+            |Page {
+                 id,
+                 namespace,
+                 title,
                  ..
              }| {
-                if categories.contains(&to) {
-                    Some((from, to))
+                if category_members.contains_key(&id) {
+                    Some((id, (namespace, title)))
                 } else {
                     None
                 }
             },
         )
         .collect();
+
+    let category_members: Map<_, _> = category_members
+        .into_iter()
+        .map(|(page_id, categories)| {
+            let (namespace, title) = pages.remove(&page_id).expect("page ID should be here!");
+            let title = namespaces.readable_title(&title, namespace);
+            (
+                title,
+                categories,
+            )
+        })
+        .collect();
+    
+    serde_json::to_writer(std::io::stdout().lock(), &category_members)?;
+
     Ok(())
 }

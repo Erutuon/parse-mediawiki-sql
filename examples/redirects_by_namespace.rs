@@ -135,8 +135,8 @@ fn main() -> anyhow::Result<()> {
     for (k, v) in source_to_target {
         println!(
             "{}\t{}",
-            namespace_id_to_name.readable_title(&k.0, &k.1),
-            namespace_id_to_name.readable_title(&v.0, &v.1),
+            namespace_id_to_name.readable_title(&k.0, k.1),
+            namespace_id_to_name.readable_title(&v.0, v.1),
         );
     }
     Ok(())

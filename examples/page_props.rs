@@ -157,7 +157,7 @@ fn page_prop_maps(mut args: Arguments) -> Result<()> {
             if let Some(props) = id_to_props.remove(&id) {
                 if namespaces.is_empty() || namespaces.contains(&namespace) {
                     map.insert(
-                        namespace_id_to_name.readable_title(&title, &namespace),
+                        namespace_id_to_name.readable_title(&title, namespace),
                         props,
                     );
                 }
@@ -209,7 +209,7 @@ pub fn serialize_displaytitles(mut args: Arguments) -> Result<()> {
             if let Some(displaytitle) = id_to_displaytitle.remove(&id) {
                 if namespaces.is_empty() || namespaces.contains(&namespace) {
                     map.insert(
-                        namespace_id_to_name.readable_title(&title, &namespace),
+                        namespace_id_to_name.readable_title(&title, namespace),
                         displaytitle,
                     );
                 }

@@ -143,7 +143,7 @@ impl<'a> FromSql<'a> for &'a str {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
         context(
             "string with no escape sequences",
-            map_res(<&[u8]>::from_sql, |bytes| std::str::from_utf8(bytes)),
+            map_res(<&[u8]>::from_sql, std::str::from_utf8),
         )(s)
     }
 }

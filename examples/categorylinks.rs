@@ -100,7 +100,7 @@ fn main() -> Result<()> {
          }| {
             if let Some(categories) = id_to_categories.remove(&id) {
                 map.insert(
-                    namespace_id_to_name.readable_title(&title, &namespace),
+                    namespace_id_to_name.readable_title(&title, namespace),
                     categories,
                 );
             }

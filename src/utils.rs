@@ -125,7 +125,7 @@ impl NamespaceMap {
 
     fn from_json_with_path(json: &str, path: Option<&Path>) -> Result<Self, Error> {
         Ok(Self(
-            serde_json::from_str::<Response>(&json)
+            serde_json::from_str::<Response>(json)
                 .map_err(|source| {
                     if let Some(path) = path {
                         Error::JsonFile {
@@ -152,7 +152,7 @@ impl NamespaceMap {
     pub fn readable_title(
         &self,
         PageTitle(title): &PageTitle,
-        namespace: &PageNamespace,
+        namespace: PageNamespace,
     ) -> String {
         self.0
             .get(&namespace)
