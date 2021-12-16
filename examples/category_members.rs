@@ -80,7 +80,7 @@ fn main() -> Result<()> {
             let (namespace, title) = pages.remove(&page_id).expect("page ID should be here!");
             let title = title_codec
                 .namespace_map
-                .title_with_spaces(namespace.into_inner(), &title.into_inner());
+                .title_with_spaces_unchecked(namespace.into_inner(), &title.into_inner());
             (title, categories)
         })
         .collect();

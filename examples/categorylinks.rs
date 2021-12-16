@@ -102,7 +102,7 @@ fn main() -> Result<()> {
                 map.insert(
                     title_codec
                         .namespace_map
-                        .title_with_spaces(namespace.into_inner(), &title.into_inner()),
+                        .title_with_spaces_unchecked(namespace.into_inner(), &title.into_inner()),
                     categories,
                 );
             }
