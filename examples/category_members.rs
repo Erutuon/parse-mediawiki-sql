@@ -1,5 +1,4 @@
 use anyhow::Result;
-use mwtitle::Title;
 use parse_mediawiki_sql::{
     field_types::PageTitle,
     schemas::{CategoryLink, Page},
@@ -79,10 +78,9 @@ fn main() -> Result<()> {
         .into_iter()
         .map(|(page_id, categories)| {
             let (namespace, title) = pages.remove(&page_id).expect("page ID should be here!");
-            let title = title_codec.prefixed_text(&Title::new_unchecked(
-                namespace.into_inner(),
-                &title.into_inner(),
-            ));
+            let title = title_codec
+                .namespace_map
+                .title_with_spaces(namespace.into_inner(), &title.into_inner());
             (title, categories)
         })
         .collect();

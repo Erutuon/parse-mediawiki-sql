@@ -4,7 +4,7 @@ use anyhow::Result;
 use parse_mediawiki_sql::{
     field_types::PageNamespace,
     schemas::{Page, PageProperty},
-    utils::{memory_map, Mmap, Title, TitleCodec},
+    utils::{memory_map, Mmap, TitleCodec},
 };
 use pico_args::Arguments;
 use serde::Serialize;
@@ -159,10 +159,9 @@ fn page_prop_maps(mut args: Arguments) -> Result<()> {
             if let Some(props) = id_to_props.remove(&id) {
                 if namespaces.is_empty() || namespaces.contains(&namespace) {
                     map.insert(
-                        title_codec.prefixed_text(&Title::new_unchecked(
-                            namespace.into_inner(),
-                            &title.into_inner(),
-                        )),
+                        title_codec
+                            .namespace_map
+                            .title_with_spaces(namespace.into_inner(), &title.into_inner()),
                         props,
                     );
                 }
@@ -214,10 +213,9 @@ pub fn serialize_displaytitles(mut args: Arguments) -> Result<()> {
             if let Some(displaytitle) = id_to_displaytitle.remove(&id) {
                 if namespaces.is_empty() || namespaces.contains(&namespace) {
                     map.insert(
-                        title_codec.prefixed_text(&Title::new_unchecked(
-                            namespace.into_inner(),
-                            &title.into_inner(),
-                        )),
+                        title_codec
+                            .namespace_map
+                            .title_with_spaces(namespace.into_inner(), &title.into_inner()),
                         displaytitle,
                     );
                 }

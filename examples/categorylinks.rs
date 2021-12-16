@@ -1,6 +1,5 @@
 use anyhow::Result;
 use bstr::ByteSlice;
-use mwtitle::Title;
 use pico_args::Arguments;
 use std::{collections::BTreeMap as Map, convert::TryFrom, path::PathBuf};
 
@@ -101,10 +100,9 @@ fn main() -> Result<()> {
          }| {
             if let Some(categories) = id_to_categories.remove(&id) {
                 map.insert(
-                    title_codec.prefixed_text(&Title::new_unchecked(
-                        namespace.into_inner(),
-                        &title.into_inner(),
-                    )),
+                    title_codec
+                        .namespace_map
+                        .title_with_spaces(namespace.into_inner(), &title.into_inner()),
                     categories,
                 );
             }
