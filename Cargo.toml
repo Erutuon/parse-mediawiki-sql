@@ -20,25 +20,26 @@ name = "parse_mediawiki_sql"
 bstr = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 either = "1.6.1"
-flate2 = { version = "1.0.20", optional = true }
 joinery = "2.0.0"
 memmap2 = { version = "0.2", optional = true }
 nom = "6.1.2"
 ordered-float = "2.5"
 serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1.0.64", optional = true }
 thiserror = { version = "1.0.24", optional = true }
+mwtitle = { path = "../../Libraries/mwbot/mwtitle", features = ["utils"], optional = true }
 unicase = "2.6.0"
 
 [features]
 # Can rename this to serde when namespaced features are stabilized:
 # https://doc.rust-lang.org/nightly/cargo/reference/unstable.html#namespaced-features
 serialization = ["serde", "chrono/serde"]
-utils = ["flate2", "memmap2", "serde", "serde_json", "thiserror"]
+utils = ["memmap2", "thiserror", "mwtitle"]
 
 [dev-dependencies]
 anyhow = "1.0.32"
 pico-args = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1.0.64" }
 smartstring = { version = "0.2.5", features = ["serde"] }
 static_assertions = "1.1.0"
 
