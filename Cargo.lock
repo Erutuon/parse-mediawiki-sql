@@ -193,6 +193,7 @@ dependencies = [
 [[package]]
 name = "mwtitle"
 version = "0.1.0"
+source = "git+https://gitlab.com/mwbot-rs/mwbot?rev=4958ddae#4958ddae4c729703210bc4a830cd600b05ae8408"
 dependencies = [
  "bytemuck",
  "flate2",

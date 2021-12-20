@@ -26,7 +26,7 @@ nom = "6.1.2"
 ordered-float = "2.5"
 serde = { version = "1", features = ["derive"], optional = true }
 thiserror = { version = "1.0.24", optional = true }
-mwtitle = { path = "../../Libraries/mwbot/mwtitle", features = ["utils"], optional = true }
+mwtitle = { git = "https://gitlab.com/mwbot-rs/mwbot", rev = "4958ddae", features = ["utils"], optional = true }
 unicase = "2.6.0"
 
 [features]
