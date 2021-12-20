@@ -28,6 +28,7 @@ extern crate parse_mediawiki_sql;
 To generate a `Vec` containing the titles of all redirect pages:
 
 ```no_run
+# #[cfg(feature = "utils")]
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 use parse_mediawiki_sql::{
     iterate_sql_insertions,
@@ -51,12 +52,15 @@ let redirects: Vec<(PageNamespace, PageTitle)> =
         .collect();
 # Ok(())
 # }
+# #[cfg(not(feature = "utils"))]
+# fn main() {}
 ```
 
 Only a mutable reference to the struct is iterable, so a `for`-loop
 must use `&mut` or `.into_iter()` to iterate over the struct:
 
 ```no_run
+# #[cfg(feature = "utils")]
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # use parse_mediawiki_sql::{
 #     iterate_sql_insertions,
@@ -72,6 +76,8 @@ for Page { namespace, title, is_redirect, .. } in &mut iterate_sql_insertions(&p
 }
 # Ok(())
 # }
+# #[cfg(not(feature = "utils"))]
+# fn main() {}
 ```
 */
 
