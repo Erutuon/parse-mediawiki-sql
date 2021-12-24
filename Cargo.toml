@@ -21,12 +21,12 @@ bstr = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 either = "1.6.1"
 joinery = "2.0.0"
-memmap2 = { version = "0.2", optional = true }
-nom = "6.1.2"
+memmap2 = { version = "0.5.0", optional = true }
+nom = "7.1.0"
 ordered-float = "2.5"
 serde = { version = "1", features = ["derive"], optional = true }
 thiserror = { version = "1.0.24", optional = true }
-mwtitle = { git = "https://gitlab.com/mwbot-rs/mwbot", rev = "4958ddae", features = ["utils"], optional = true }
+mwtitle = { version = "0.1", default-features = false, features = ["utils"], optional = true }
 unicase = "2.6.0"
 
 [features]

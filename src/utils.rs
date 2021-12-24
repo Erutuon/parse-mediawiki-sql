@@ -54,4 +54,26 @@ impl Error {
     }
 }
 
-pub use mwtitle::{Title, TitleCodec};
+pub use mwtitle::{NamespaceMap, Title};
+
+pub trait NamespaceMapExt {
+    fn pretty_title(
+        &self,
+        namespace: crate::field_types::PageNamespace,
+        title: &crate::field_types::PageTitle,
+    ) -> String;
+}
+
+impl NamespaceMapExt for NamespaceMap {
+    fn pretty_title(
+        &self,
+        namespace: crate::field_types::PageNamespace,
+        title: &crate::field_types::PageTitle,
+    ) -> String {
+        self.to_pretty(&Title::new_unchecked(
+            namespace.into_inner(),
+            <&String>::from(title),
+        ))
+        .expect("invalid namespace ID")
+    }
+}

@@ -2,7 +2,7 @@ use anyhow::Result;
 use parse_mediawiki_sql::{
     field_types::PageTitle,
     schemas::{CategoryLink, Page},
-    utils::{memory_map, TitleCodec},
+    utils::{memory_map, NamespaceMap, NamespaceMapExt as _},
 };
 use std::{
     collections::{HashMap as Map, HashSet as Set},
@@ -26,7 +26,7 @@ fn main() -> Result<()> {
     let category_links_sql = unsafe { memory_map(&category_links_path)? };
     let page_sql = unsafe { memory_map(&page_path)? };
 
-    let title_codec = TitleCodec::from_path(&siteinfo_namespaces_path)?;
+    let namespace_map = NamespaceMap::from_path(&siteinfo_namespaces_path)?;
 
     let categories = args
         .finish()
@@ -78,9 +78,7 @@ fn main() -> Result<()> {
         .into_iter()
         .map(|(page_id, categories)| {
             let (namespace, title) = pages.remove(&page_id).expect("page ID should be here!");
-            let title = title_codec
-                .namespace_map
-                .title_with_spaces_unchecked(namespace.into_inner(), &title.into_inner());
+            let title = namespace_map.pretty_title(namespace, &title);
             (title, categories)
         })
         .collect();
