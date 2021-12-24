@@ -2,7 +2,7 @@ use anyhow::Result;
 use parse_mediawiki_sql::{
     field_types::PageTitle,
     schemas::{CategoryLink, Page},
-    utils::{memory_map, NamespaceMap},
+    utils::{memory_map, NamespaceMap, NamespaceMapExt as _},
 };
 use std::{
     collections::{HashMap as Map, HashSet as Set},
@@ -21,11 +21,12 @@ fn main() -> Result<()> {
 
     let category_links_path = get_arg(["-c", "--category-links"], "categorylinks.sql");
     let page_path = get_arg(["-p", "--page"], "page.sql");
-    let siteinfo_namespaces_path = get_arg(["-S", "--siteinfo-namespaces"], "siteinfo-namespaces.json");
+    let siteinfo_namespaces_path =
+        get_arg(["-S", "--siteinfo-namespaces"], "siteinfo-namespaces.json");
     let category_links_sql = unsafe { memory_map(&category_links_path)? };
     let page_sql = unsafe { memory_map(&page_path)? };
 
-    let namespaces = NamespaceMap::from_path(&siteinfo_namespaces_path)?;
+    let namespace_map = NamespaceMap::from_path(&siteinfo_namespaces_path)?;
 
     let categories = args
         .finish()
@@ -77,14 +78,11 @@ fn main() -> Result<()> {
         .into_iter()
         .map(|(page_id, categories)| {
             let (namespace, title) = pages.remove(&page_id).expect("page ID should be here!");
-            let title = namespaces.readable_title(&title, namespace);
-            (
-                title,
-                categories,
-            )
+            let title = namespace_map.pretty_title(namespace, &title);
+            (title, categories)
         })
         .collect();
-    
+
     serde_json::to_writer(std::io::stdout().lock(), &category_members)?;
 
     Ok(())

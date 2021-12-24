@@ -3,7 +3,7 @@ use parse_mediawiki_sql::{
     field_types::PageNamespace,
     iterate_sql_insertions,
     schemas::{Page, Redirect},
-    utils::{memory_map, NamespaceMap},
+    utils::{memory_map, NamespaceMap, NamespaceMapExt as _},
 };
 use pico_args::{Arguments, Keys};
 use std::{
@@ -23,12 +23,13 @@ redirects-by-namespace [arguments] namespace...
 Multiple namespace ids can be provided as positional arguments.
 ";
 
+#[allow(clippy::large_enum_variant)]
 enum Args {
     Help,
     PrintRedirects {
         page_path: PathBuf,
         redirect_path: PathBuf,
-        namespace_id_to_name: NamespaceMap,
+        namespace_map: NamespaceMap,
         namespaces: Set<PageNamespace>,
     },
 }
@@ -72,11 +73,11 @@ fn get_args() -> Result<Args> {
             "No namespaces provided in positional arguments",
         ));
     }
-    let namespace_id_to_name = NamespaceMap::from_path(&siteinfo_namespaces_path)?;
+    let namespace_map = NamespaceMap::from_path(&siteinfo_namespaces_path)?;
     Ok(Args::PrintRedirects {
         page_path,
         redirect_path,
-        namespace_id_to_name,
+        namespace_map,
         namespaces,
     })
 }
@@ -85,13 +86,13 @@ fn get_args() -> Result<Args> {
 // as arguments. Expects page.sql and redirect.sql and siteinfo-namespaces.json
 // in the current directory.
 fn main() -> anyhow::Result<()> {
-    let (page_path, redirect_path, namespace_id_to_name, namespaces) = match get_args()? {
+    let (page_path, redirect_path, namespace_map, namespaces) = match get_args()? {
         Args::PrintRedirects {
             page_path,
             redirect_path,
-            namespace_id_to_name,
+            namespace_map,
             namespaces,
-        } => (page_path, redirect_path, namespace_id_to_name, namespaces),
+        } => (page_path, redirect_path, namespace_map, namespaces),
         Args::Help => {
             eprintln!("{}", USAGE);
             return Ok(());
@@ -114,7 +115,7 @@ fn main() -> anyhow::Result<()> {
                  title,
                  namespace,
                  ..
-             }| (id, (title, namespace)),
+             }| { (id, (namespace, title)) },
         )
         .collect();
     let mut redirects = iterate_sql_insertions::<Redirect>(&redirect_sql);
@@ -128,15 +129,15 @@ fn main() -> anyhow::Result<()> {
              }| {
                 id_to_title
                     .get(&from)
-                    .map(|from| (from, (title, namespace)))
+                    .map(|from| (from, (namespace, title)))
             },
         )
         .collect();
     for (k, v) in source_to_target {
         println!(
             "{}\t{}",
-            namespace_id_to_name.readable_title(&k.0, k.1),
-            namespace_id_to_name.readable_title(&v.0, v.1),
+            namespace_map.pretty_title(k.0, &k.1),
+            namespace_map.pretty_title(v.0, &v.1)
         );
     }
     Ok(())

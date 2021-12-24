@@ -4,7 +4,7 @@ use anyhow::Result;
 use parse_mediawiki_sql::{
     field_types::PageNamespace,
     schemas::{Page, PageProperty},
-    utils::{memory_map, Mmap, NamespaceMap},
+    utils::{memory_map, Mmap, NamespaceMap, NamespaceMapExt as _},
 };
 use pico_args::Arguments;
 use serde::Serialize;
@@ -99,10 +99,7 @@ fn count_prop_names(mut args: Arguments) -> Result<()> {
     Ok(())
 }
 
-fn get_namespaces(
-    args: Arguments,
-    namespace_id_to_name: &NamespaceMap,
-) -> Result<Vec<PageNamespace>> {
+fn get_namespaces(args: Arguments, namespace_map: &NamespaceMap) -> Result<Vec<PageNamespace>> {
     args.finish()
         .into_iter()
         .map(|os_str| -> Result<_> {
@@ -112,7 +109,7 @@ fn get_namespaces(
             Ok(n.parse()
                 .map(PageNamespace)
                 .ok()
-                .or_else(|| namespace_id_to_name.id(&n))
+                .or_else(|| namespace_map.get_id(n.as_str()).map(PageNamespace))
                 .ok_or(Error::InvalidNamespace(n))?)
         })
         .collect()
@@ -125,13 +122,13 @@ fn page_prop_maps(mut args: Arguments) -> Result<()> {
     };
     let page_sql =
         unsafe { memory_map_from_args_in_dir(&mut args, ["-p", "--page"], "page.sql", &dump_dir)? };
-    let namespace_id_to_name = NamespaceMap::from_path(&path_from_args_in_dir(
+    let namespace_map = NamespaceMap::from_path(&path_from_args_in_dir(
         &mut args,
         ["-s", "--siteinfo-namespaces"],
         "siteinfo-namespaces.json",
         &dump_dir,
     )?)?;
-    let namespaces = get_namespaces(args, &namespace_id_to_name)?;
+    let namespaces = get_namespaces(args, &namespace_map)?;
     let mut id_to_props = parse_mediawiki_sql::iterate_sql_insertions(&props_sql).fold(
         Map::new(),
         |mut map,
@@ -156,10 +153,7 @@ fn page_prop_maps(mut args: Arguments) -> Result<()> {
          }| {
             if let Some(props) = id_to_props.remove(&id) {
                 if namespaces.is_empty() || namespaces.contains(&namespace) {
-                    map.insert(
-                        namespace_id_to_name.readable_title(&title, namespace),
-                        props,
-                    );
+                    map.insert(namespace_map.pretty_title(namespace, &title), props);
                 }
             }
             map
@@ -176,13 +170,13 @@ pub fn serialize_displaytitles(mut args: Arguments) -> Result<()> {
     };
     let page_sql =
         unsafe { memory_map_from_args_in_dir(&mut args, ["-p", "--page"], "page.sql", &dump_dir)? };
-    let namespace_id_to_name = NamespaceMap::from_path(&path_from_args_in_dir(
+    let namespace_map = NamespaceMap::from_path(&path_from_args_in_dir(
         &mut args,
         ["-s", "--siteinfo-namespaces"],
         "siteinfo-namespaces.json",
         &dump_dir,
     )?)?;
-    let namespaces = get_namespaces(args, &namespace_id_to_name)?;
+    let namespaces = get_namespaces(args, &namespace_map)?;
     let mut id_to_displaytitle = parse_mediawiki_sql::iterate_sql_insertions(&props_sql)
         .filter_map(
             |PageProperty {
@@ -208,10 +202,7 @@ pub fn serialize_displaytitles(mut args: Arguments) -> Result<()> {
          }| {
             if let Some(displaytitle) = id_to_displaytitle.remove(&id) {
                 if namespaces.is_empty() || namespaces.contains(&namespace) {
-                    map.insert(
-                        namespace_id_to_name.readable_title(&title, namespace),
-                        displaytitle,
-                    );
+                    map.insert(namespace_map.pretty_title(namespace, &title), displaytitle);
                 }
             }
             map

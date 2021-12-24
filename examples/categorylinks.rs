@@ -7,7 +7,7 @@ use parse_mediawiki_sql::{
     field_types::PageTitle,
     iterate_sql_insertions,
     schemas::{CategoryLink, Page},
-    utils::{memory_map, Mmap, NamespaceMap},
+    utils::{memory_map, Mmap, NamespaceMap, NamespaceMapExt as _},
 };
 
 #[allow(clippy::redundant_closure)]
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
             &dump_dir,
         )?
     };
-    let namespace_id_to_name = NamespaceMap::from_path(&path_from_args_in_dir(
+    let namespace_map = NamespaceMap::from_path(&path_from_args_in_dir(
         &mut args,
         ["-s", "--siteinfo-namespaces"],
         "siteinfo-namespaces.json",
@@ -99,10 +99,7 @@ fn main() -> Result<()> {
              ..
          }| {
             if let Some(categories) = id_to_categories.remove(&id) {
-                map.insert(
-                    namespace_id_to_name.readable_title(&title, namespace),
-                    categories,
-                );
+                map.insert(namespace_map.pretty_title(namespace, &title), categories);
             }
             map
         },
