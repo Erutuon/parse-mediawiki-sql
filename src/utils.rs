@@ -19,7 +19,7 @@ Pass a borrowed memory map to [`iterate_sql_insertions`](crate::iterate_sql_inse
 produced by the iterator can borrow from the file's contents. See the [example](crate#example) in the crate documentation.
 
 # Errors
-In case of error, returns [`Error::Io`] containing the action that failed, the path, and the underlying [`std::io::Error`].
+In case of error, returns an [`struct@Error`] containing the action that failed, the path, and the underlying [`std::io::Error`].
 
 # Safety
 
