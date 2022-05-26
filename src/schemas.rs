@@ -16,12 +16,11 @@ use nom::{
 use crate::{
     from_sql::{FromSql, IResult},
     field_types::{
-        ActorId, CategoryId, ChangeTagDefinitionId, ChangeTagId, CommentId,
-        ContentModel, Expiry, ExternalLinkId,
-        FullPageTitle, LogId, MajorMime, MediaType, MinorMime, NotNan,
-        PageAction, PageCount, PageId, PageNamespace, PageRestrictionId,
-        PageRestrictionsOld, PageTitle, PageType, ProtectionLevel,
-        RecentChangeId, RevisionId, Sha1, Timestamp, UserGroup, UserId,
+        ActorId, CategoryId, ChangeTagDefinitionId, ChangeTagId, CommentId, ContentModel, Expiry,
+        ExternalLinkId, FullPageTitle, LinkTargetId, LogId, MajorMime, MediaType, MinorMime,
+        NotNan, PageAction, PageCount, PageId, PageNamespace, PageRestrictionId,
+        PageRestrictionsOld, PageTitle, PageType, ProtectionLevel, RecentChangeId, RevisionId,
+        Sha1, Timestamp, UserGroup, UserId,
     },
     FromSqlTuple,
 };
