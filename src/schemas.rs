@@ -342,7 +342,7 @@ impl_row_from_sql! {
         namespace: PageNamespace,
         title: PageTitle,
         #[cfg_attr(feature = "serialization", serde(borrow))]
-        restrictions: PageRestrictionsOld<'input>,
+        restrictions: Option<PageRestrictionsOld<'input>>,
         is_redirect: bool,
         is_new: bool,
         #[cfg_attr(feature = "serialization", serde(serialize_with = "crate::field_types::serialize_not_nan", deserialize_with = "crate::field_types::deserialize_not_nan"))]
