@@ -174,6 +174,14 @@ field of the `langlinks` table.
 }
 
 impl_wrapper! {
+    #[doc="
+Represents [`lt_id`](https://www.mediawiki.org/wiki/Manual:Linktarget_table#lt_id),
+the primary key of the `linktarget` table.
+"]
+    LinkTargetId: u64
+}
+
+impl_wrapper! {
     #[doc = "
 Represents
 [`cat_id`](https://www.mediawiki.org/wiki/Manual:Category_table#cat_id),
