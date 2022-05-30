@@ -14,7 +14,6 @@ use nom::{
 };
 
 use crate::{
-    from_sql::{FromSql, IResult},
     field_types::{
         ActorId, CategoryId, ChangeTagDefinitionId, ChangeTagId, CommentId, ContentModel, Expiry,
         ExternalLinkId, FullPageTitle, LinkTargetId, LogId, MajorMime, MediaType, MinorMime,
@@ -22,21 +21,20 @@ use crate::{
         PageRestrictionsOld, PageTitle, PageType, ProtectionLevel, RecentChangeId, RevisionId,
         Sha1, Timestamp, UserGroup, UserId,
     },
+    from_sql::{FromSql, IResult},
     FromSqlTuple,
 };
 
 #[cfg(feature = "serialization")]
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 macro_rules! mediawiki_link {
     (
         $text:expr,
         $page:expr $(,)?
     ) => {
-        concat! (
-            "[", $text, "](https://www.mediawiki.org/wiki/", $page, ")"
-        )
-    }
+        concat!("[", $text, "](https://www.mediawiki.org/wiki/", $page, ")")
+    };
 }
 
 macro_rules! with_doc_comment {
@@ -49,11 +47,12 @@ macro_rules! with_doc_comment {
     }
 }
 
+#[rustfmt::skip]
 macro_rules! database_table_doc {
     (
         $table_name:ident
     ) => {
-        concat! (
+        concat!(
             "Represents a row in the ",
             mediawiki_link!(
                 concat!("`", stringify!($table_name), "` table"),
@@ -468,9 +467,7 @@ fn test_redirect() {
                 namespace: PageNamespace(1),
                 title: PageTitle("разблюто".to_string()),
                 interwiki: Some(""),
-                fragment: Some(
-                    "Discussion from Stephen G. Brown's talk-page".to_string()
-                ),
+                fragment: Some("Discussion from Stephen G. Brown's talk-page".to_string()),
             }
         ))
     );
