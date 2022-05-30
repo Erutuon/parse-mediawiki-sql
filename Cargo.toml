@@ -1,6 +1,6 @@
 [package]
 name = "parse-mediawiki-sql"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Erutuon <5840197+Erutuon@users.noreply.github.com>"]
 license = "MIT"
 description = "A parser for SQL dumps of a MediaWiki database"
@@ -64,6 +64,10 @@ required-features = ["utils"]
 name = "page_props"
 required-features = ["utils"]
 # requires serde::Serialize macro
+
+[[example]]
+name = "random_page"
+required-features = ["utils"]
 
 [[example]]
 name = "redirects_by_namespace"
