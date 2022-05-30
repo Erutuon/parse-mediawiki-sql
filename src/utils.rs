@@ -56,24 +56,20 @@ impl Error {
 
 pub use mwtitle::{NamespaceMap, Title};
 
+use crate::field_types::{PageNamespace, PageTitle};
+
 pub trait NamespaceMapExt {
-    fn pretty_title(
-        &self,
-        namespace: crate::field_types::PageNamespace,
-        title: &crate::field_types::PageTitle,
-    ) -> String;
+    /// # Panics
+    ///
+    /// Will panic if the [`PageNamespace`] isn't found in the [`NamespaceMap`].
+    fn pretty_title(&self, namespace: PageNamespace, title: PageTitle) -> String;
 }
 
 impl NamespaceMapExt for NamespaceMap {
-    fn pretty_title(
-        &self,
-        namespace: crate::field_types::PageNamespace,
-        title: &crate::field_types::PageTitle,
-    ) -> String {
-        self.to_pretty(&Title::new_unchecked(
-            namespace.into_inner(),
-            <&String>::from(title),
-        ))
-        .expect("invalid namespace ID")
+    fn pretty_title(&self, namespace: PageNamespace, title: PageTitle) -> String {
+        // Unsafe because `namespace` is not checked against the `NamespaceMap`.
+        // `to_pretty` will panic if namespace is not found in `NamespaceMap`.
+        self.to_pretty(unsafe { &Title::new_unchecked(namespace.into_inner(), title.into_inner()) })
+            .expect("invalid namespace ID")
     }
 }

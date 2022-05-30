@@ -155,9 +155,9 @@ dependencies = [
 
 [[package]]
 name = "mwtitle"
-version = "0.1.0"
+version = "0.2.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74a3ccef98525c67008a393dcd4739111a02d568fafd09ad6fa96bf70f86e857"
+checksum = "60506e6d43477543ab7fb6feb22e481d9ed4ca689abe02d851d0c647c12d49a6"
 dependencies = [
  "bytemuck",
  "flate2",
@@ -220,6 +220,7 @@ dependencies = [
  "nom",
  "ordered-float",
  "pico-args",
+ "rand",
  "serde",
  "serde_json",
  "smartstring",

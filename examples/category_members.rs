@@ -78,7 +78,7 @@ fn main() -> Result<()> {
         .into_iter()
         .map(|(page_id, categories)| {
             let (namespace, title) = pages.remove(&page_id).expect("page ID should be here!");
-            let title = namespace_map.pretty_title(namespace, &title);
+            let title = namespace_map.pretty_title(namespace, title);
             (title, categories)
         })
         .collect();

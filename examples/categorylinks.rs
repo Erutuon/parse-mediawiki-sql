@@ -99,7 +99,7 @@ fn main() -> Result<()> {
              ..
          }| {
             if let Some(categories) = id_to_categories.remove(&id) {
-                map.insert(namespace_map.pretty_title(namespace, &title), categories);
+                map.insert(namespace_map.pretty_title(namespace, title), categories);
             }
             map
         },

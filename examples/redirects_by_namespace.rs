@@ -136,8 +136,8 @@ fn main() -> anyhow::Result<()> {
     for (k, v) in source_to_target {
         println!(
             "{}\t{}",
-            namespace_map.pretty_title(k.0, &k.1),
-            namespace_map.pretty_title(v.0, &v.1)
+            namespace_map.pretty_title(k.0, k.1.clone()),
+            namespace_map.pretty_title(v.0, v.1)
         );
     }
     Ok(())

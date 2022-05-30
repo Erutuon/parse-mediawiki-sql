@@ -26,7 +26,8 @@ nom = "7.1.0"
 ordered-float = "2.5"
 serde = { version = "1", features = ["derive"], optional = true }
 thiserror = { version = "1.0.24", optional = true }
-mwtitle = { version = "0.1", default-features = false, features = ["utils"], optional = true }
+# mwtitle = { path = "../../Libraries/mwbot/mwtitle", default-features = false, features = ["utils"], optional = true }
+mwtitle = { version = "0.2.0-alpha", default-features = false, features = ["utils"], optional = true }
 unicase = "2.6.0"
 
 [features]
@@ -38,6 +39,7 @@ utils = ["memmap2", "thiserror", "mwtitle"]
 [dev-dependencies]
 anyhow = "1.0.32"
 pico-args = "0.4"
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1.0.64" }
 smartstring = { version = "0.2.5", features = ["serde"] }
