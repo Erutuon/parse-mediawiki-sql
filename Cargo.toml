@@ -38,6 +38,7 @@ utils = ["memmap2", "thiserror", "mwtitle"]
 [dev-dependencies]
 anyhow = "1.0.32"
 pico-args = "0.4"
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1.0.64" }
 smartstring = { version = "0.2.5", features = ["serde"] }
