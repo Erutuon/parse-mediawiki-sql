@@ -1,7 +1,10 @@
 use joinery::Joinable;
 use parse_mediawiki_sql::{iterate_sql_insertions, utils::memory_map, FromSqlTuple};
-use std::{fmt::Display, time::{Duration, Instant}};
-use std::{path::PathBuf};
+use std::path::PathBuf;
+use std::{
+    fmt::Display,
+    time::{Duration, Instant},
+};
 
 fn print_row_count<'a, T: FromSqlTuple<'a> + 'a>(sql_script: &'a [u8]) {
     let start = Instant::now();
@@ -14,7 +17,10 @@ fn print_row_count<'a, T: FromSqlTuple<'a> + 'a>(sql_script: &'a [u8]) {
         }
         Err(e) => match e {
             nom::Err::Incomplete(_) => {
-                eprintln!("Needed more data after {} rows were parsed in {}", count, elapsed);
+                eprintln!(
+                    "Needed more data after {} rows were parsed in {}",
+                    count, elapsed
+                );
             }
             nom::Err::Error(e) | nom::Err::Failure(e) => {
                 eprintln!("Error after parsing {} rows in {}: {}", count, elapsed, e);

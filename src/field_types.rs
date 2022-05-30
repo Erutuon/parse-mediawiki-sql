@@ -5,7 +5,12 @@ Implements the [`FromSql`] trait for them.
 Re-exports the [`Datelike`] and [`Timelike`] traits from the [`chrono`] crate,
 which are used by [`Timestamp`].
  */
-use nom::{branch::alt, bytes::streaming::tag, combinator::{map, map_res}, error::context};
+use nom::{
+    branch::alt,
+    bytes::streaming::tag,
+    combinator::{map, map_res},
+    error::context,
+};
 
 use std::{
     collections::BTreeMap,
@@ -641,7 +646,7 @@ or exist now on other wikis.
 )]
 pub struct PageRestrictionsOld<'a>(
     #[cfg_attr(feature = "serialization", serde(borrow))]
-    pub BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>,
+    pub  BTreeMap<PageAction<'a>, Vec<ProtectionLevel<'a>>>,
 );
 
 impl<'a> PageRestrictionsOld<'a> {

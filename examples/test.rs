@@ -6,9 +6,9 @@ fn main() {
         "(7,4,'GNU_Free_Documentation_License','',0,0,0.492815242607906,",
         "'20200201151554','20200201151623',28863815,2777,'wikitext',NULL)"
     )
-    .strip_prefix("(")
+    .strip_prefix('(')
     .unwrap()
-    .strip_suffix(")")
+    .strip_suffix(')')
     .unwrap()
     .split(',')
     .collect();

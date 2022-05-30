@@ -152,10 +152,7 @@ impl<'a> FromSql<'a> for &'a str {
 /// to be valid UTF-8, like page titles.
 impl<'a> FromSql<'a> for String {
     fn from_sql(s: &'a [u8]) -> IResult<'a, Self> {
-        context(
-            "string",
-            map_res(<Vec<u8>>::from_sql, String::from_utf8),
-        )(s)
+        context("string", map_res(<Vec<u8>>::from_sql, String::from_utf8))(s)
     }
 }
 
@@ -186,7 +183,7 @@ impl<'a> FromSql<'a> for Vec<u8> {
                                 _ => unreachable!(),
                             }),
                         )),
-                        |opt| opt.unwrap_or_else(Vec::new),
+                        |opt| opt.unwrap_or_default(),
                     ),
                     tag("'"),
                 ),
