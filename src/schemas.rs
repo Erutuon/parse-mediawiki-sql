@@ -17,9 +17,8 @@ use crate::{
     field_types::{
         ActorId, CategoryId, ChangeTagDefinitionId, ChangeTagId, CommentId, ContentModel, Expiry,
         ExternalLinkId, FullPageTitle, LinkTargetId, LogId, MajorMime, MediaType, MinorMime,
-        NotNan, PageAction, PageCount, PageId, PageNamespace, PageRestrictionId,
-        PageRestrictionsOld, PageTitle, PageType, ProtectionLevel, RecentChangeId, RevisionId,
-        Sha1, Timestamp, UserGroup, UserId,
+        NotNan, PageAction, PageCount, PageId, PageNamespace, PageRestrictionId, PageTitle,
+        PageType, ProtectionLevel, RecentChangeId, RevisionId, Sha1, Timestamp, UserGroup, UserId,
     },
     from_sql::{FromSql, IResult},
     FromSqlTuple,
