@@ -318,6 +318,15 @@ impl_row_from_sql! {
 }
 
 impl_row_from_sql! {
+    linktarget
+    LinkTarget {
+        id: LinkTargetId,
+        namespace: PageNamespace,
+        title: PageTitle,
+    }
+}
+
+impl_row_from_sql! {
     page_restrictions
     PageRestriction<'input> {
         id: PageRestrictionId,
@@ -479,8 +488,6 @@ impl_row_from_sql! {
     templatelinks
     TemplateLink {
         from: PageId,
-        namespace: PageNamespace,
-        title: PageTitle,
         from_namespace: PageNamespace,
         target_id: LinkTargetId,
     }
