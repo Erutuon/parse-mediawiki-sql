@@ -29,7 +29,7 @@ To generate a `Vec` containing the titles of all redirect pages:
 use parse_mediawiki_sql::{
     iterate_sql_insertions,
     schemas::Page,
-    types::{PageNamespace, PageTitle},
+    field_types::{PageNamespace, PageTitle},
     utils::memory_map,
 };
 use std::fs::File;
