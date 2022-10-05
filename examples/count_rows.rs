@@ -136,6 +136,7 @@ fn main() -> anyhow::Result<()> {
                 imagelinks => ImageLink,
                 iwlinks => InterwikiLink,
                 langlinks => LanguageLink,
+                linktarget => LinkTarget,
                 page_restrictions => PageRestriction,
                 page => Page,
                 pagelinks => PageLink,
