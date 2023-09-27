@@ -122,7 +122,7 @@ fn main() -> anyhow::Result<()> {
         _ => unreachable!("test"),
     };
 
-    let script = unsafe { memory_map(&sql_path)? };
+    let script = unsafe { memory_map(sql_path)? };
 
     do_with_table! {
         print_row_count::<

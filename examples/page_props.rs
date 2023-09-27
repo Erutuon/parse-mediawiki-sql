@@ -41,7 +41,7 @@ unsafe fn memory_map_from_args_in_dir(
     opt_dir: &Option<PathBuf>,
 ) -> Result<Mmap> {
     let path = path_from_args_in_dir(args, keys, default, opt_dir)?;
-    Ok(memory_map(&path)?)
+    Ok(memory_map(path)?)
 }
 
 #[allow(clippy::redundant_closure)]
