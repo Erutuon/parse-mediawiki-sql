@@ -23,8 +23,8 @@ fn main() -> Result<()> {
     let page_path = get_arg(["-p", "--page"], "page.sql");
     let siteinfo_namespaces_path =
         get_arg(["-S", "--siteinfo-namespaces"], "siteinfo-namespaces.json");
-    let category_links_sql = unsafe { memory_map(&category_links_path)? };
-    let page_sql = unsafe { memory_map(&page_path)? };
+    let category_links_sql = unsafe { memory_map(category_links_path)? };
+    let page_sql = unsafe { memory_map(page_path)? };
 
     let namespace_map = NamespaceMap::from_path(&siteinfo_namespaces_path)?;
 
