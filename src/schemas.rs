@@ -369,7 +369,7 @@ impl_row_from_sql! {
         namespace: PageNamespace,
         title: PageTitle,
         from_namespace: PageNamespace,
-        target_id: Option<PageId>,
+        target: Option<PageId>,
     }
 }
 
