@@ -37,7 +37,7 @@ fn main() -> Result<()> {
                 .unwrap_or_else(|| "siteinfo-namespaces.json".into()),
         ))?;
         let titles: Vec<_> = std::io::BufReader::new(std::fs::File::open(
-            &args.next().unwrap_or_else(|| "random_pages.txt".into()),
+            args.next().unwrap_or_else(|| "random_pages.txt".into()),
         )?)
         .lines()
         .map(|line| {
