@@ -142,7 +142,7 @@ where
                     opt(multispace0),
                     tuple((
                         tag(B("INSERT INTO `")),
-                        take_while(|b| (b'a'..=b'z').contains(&b) || b == b'_'),
+                        take_while(|b: u8| b == b'_' || b.is_ascii_lowercase()),
                         tag(B("` VALUES ")),
                     )),
                 ))),
