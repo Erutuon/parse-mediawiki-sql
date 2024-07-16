@@ -367,7 +367,7 @@ impl_row_from_sql! {
     PageLink {
         from: PageId,
         from_namespace: PageNamespace,
-        target: Option<PageId>,
+        target: PageId,
     }
 }
 
